@@ -35,7 +35,7 @@ if (!defined('ABSPATH')) {
  *
  * @param    bool    $force_refresh    Force token refresh even if valid token exists (default: false)
  *
- * @return   string|WP_Error          Access token on success, WP_Error on failure
+ * @return   string|\WP_Error          Access token on success, WP_Error on failure
  *
  * @throws   Exception                When API credentials are not configured
  */
@@ -277,7 +277,7 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
 
     // Handle other error status codes
     if ($status_code < 200 || $status_code >= 300) {
-        $error = new WP_Error(
+        $error = new \WP_Error(
             'api_error_' . $status_code,
             sprintf(__('Odoo API returned error %d: %s', 'woo-odoo-integration'), $status_code, $body),
             array('status' => $status_code, 'endpoint' => $endpoint)
@@ -291,7 +291,7 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
     $response_data = json_decode($body, true);
 
     if (json_last_error() !== JSON_ERROR_NONE) {
-        $error = new WP_Error(
+        $error = new \WP_Error(
             'api_invalid_json',
             __('Invalid JSON response from Odoo API', 'woo-odoo-integration'),
             array('status' => 500, 'endpoint' => $endpoint)
@@ -769,6 +769,258 @@ function woo_odoo_integration_clear_countries_cache()
     $result = delete_transient('woo_odoo_integration_countries');
 
     return $result;
+}
+
+/**
+ * Get product stock from Odoo API
+ *
+ * Retrieves product stock information from Odoo using the /api/product-stock endpoint.
+ * Returns stock data for all products with variants and their quantities.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @hooks    Fires the following hooks:
+ *           - do_action('woo_odoo_integration_before_get_product_stock')
+ *           - do_action('woo_odoo_integration_after_get_product_stock', $stock_data)
+ *           - do_action('woo_odoo_integration_get_product_stock_failed', $error)
+ *
+ * @return   array|WP_Error          Product stock data on success, WP_Error on failure
+ */
+function woo_odoo_integration_api_get_product_stock()
+{
+    // Fire before get product stock hook
+    do_action('woo_odoo_integration_before_get_product_stock');
+
+    $logger = wc_get_logger();
+    $logger->info('Starting product stock sync from Odoo', array('source' => 'woo-odoo-product-sync'));
+
+    // Make API request to get product stock
+    $response = woo_odoo_integration_api_get('api/product-stock');
+
+    if (is_wp_error($response)) {
+        $logger->error('Failed to get product stock: ' . $response->get_error_message(), array('source' => 'woo-odoo-product-sync'));
+        do_action('woo_odoo_integration_get_product_stock_failed', $response);
+        return $response;
+    }
+
+    // Parse Odoo response
+    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
+        $error = new WP_Error(
+            'odoo_product_stock_api_error',
+            __('Odoo product stock API returned unexpected response format', 'woo-odoo-integration'),
+            array('status' => 500, 'response' => $response)
+        );
+
+        $logger->error('Product stock API returned unexpected response format', array('source' => 'woo-odoo-product-sync'));
+        do_action('woo_odoo_integration_get_product_stock_failed', $error);
+        return $error;
+    }
+
+    $stock_data = $response['data'];
+
+    // Apply filters to stock data
+    $stock_data = apply_filters('woo_odoo_integration_product_stock_data', $stock_data);
+
+    // Fire after get product stock hook
+    do_action('woo_odoo_integration_after_get_product_stock', $stock_data);
+
+    $logger->info('Successfully retrieved product stock data', array('source' => 'woo-odoo-product-sync'));
+
+    return $stock_data;
+}
+
+/**
+ * Sync product stock from Odoo to WooCommerce
+ *
+ * Updates WooCommerce product stock based on Odoo product stock data.
+ * Maps products using SKU (WooCommerce) to variant UUID (Odoo).
+ * Uses variant UUID as the mapping key to match with WooCommerce SKU.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @hooks    Fires the following hooks:
+ *           - do_action('woo_odoo_integration_before_sync_product_stock', $product_ids)
+ *           - do_action('woo_odoo_integration_after_sync_product_stock', $sync_results)
+ *           - do_action('woo_odoo_integration_product_stock_updated', $product_id, $old_stock, $new_stock)
+ *
+ * @param    array    $product_ids    Array of WooCommerce product IDs to sync (optional, syncs all if empty)
+ *
+ * @return   array|WP_Error         Sync results on success, WP_Error on failure
+ */
+function woo_odoo_integration_sync_product_stock($product_ids = array())
+{
+    $logger = wc_get_logger();
+    $logger->info('Starting product stock synchronization', array('source' => 'woo-odoo-product-sync'));
+
+    // Fire before sync hook
+    do_action('woo_odoo_integration_before_sync_product_stock', $product_ids);
+
+    // Get product stock from Odoo
+    $odoo_stock_data = woo_odoo_integration_api_get_product_stock();
+
+    if (is_wp_error($odoo_stock_data)) {
+        return $odoo_stock_data;
+    }
+
+    $sync_results = array(
+        'updated' => 0,
+        'skipped' => 0,
+        'errors' => 0,
+        'details' => array()
+    );
+
+    // Create SKU to stock mapping from Odoo data
+    $sku_stock_map = array();
+
+    foreach ($odoo_stock_data as $product_group) {
+        if (empty($product_group['variants'])) {
+            continue;
+        }
+
+        foreach ($product_group['variants'] as $variant) {
+            // Use variant UUID as SKU for mapping
+            if (!empty($variant['uuid'])) {
+                $sku = sanitize_text_field($variant['uuid']);
+                $quantity = floatval($variant['quantity']);
+
+                $sku_stock_map[$sku] = $quantity;
+
+                $logger->debug(sprintf(
+                    'Found SKU mapping: %s => %s (variant: %s)',
+                    $sku,
+                    $quantity,
+                    $variant['name']
+                ), array('source' => 'woo-odoo-product-sync'));
+            }
+        }
+    }
+
+    if (empty($sku_stock_map)) {
+        $error = new WP_Error(
+            'no_sku_mappings',
+            __('No valid SKU mappings found in Odoo stock data', 'woo-odoo-integration')
+        );
+        $logger->warning('No valid SKU mappings found in Odoo stock data', array('source' => 'woo-odoo-product-sync'));
+        return $error;
+    }
+
+    // Get WooCommerce products to sync
+    $args = array(
+        'post_type' => 'product',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+        'meta_query' => array(
+            array(
+                'key' => '_sku',
+                'value' => '',
+                'compare' => '!='
+            )
+        )
+    );
+
+    // If specific product IDs provided, filter by them
+    if (!empty($product_ids)) {
+        $args['post__in'] = array_map('intval', $product_ids);
+    }
+
+    $products = get_posts($args);
+
+    foreach ($products as $product_post) {
+        $product = wc_get_product($product_post->ID);
+
+        if (!$product) {
+            $sync_results['errors']++;
+            continue;
+        }
+
+        $sku = $product->get_sku();
+
+        if (empty($sku)) {
+            $sync_results['skipped']++;
+            $sync_results['details'][] = sprintf(
+                __('Product %s skipped: No SKU', 'woo-odoo-integration'),
+                $product->get_name()
+            );
+            continue;
+        }
+
+        // Check if we have stock data for this SKU
+        if (!isset($sku_stock_map[$sku])) {
+            $sync_results['skipped']++;
+            $sync_results['details'][] = sprintf(
+                __('Product %s (SKU: %s) skipped: No stock data from Odoo', 'woo-odoo-integration'),
+                $product->get_name(),
+                $sku
+            );
+            continue;
+        }
+
+        $new_stock = intval($sku_stock_map[$sku]);
+        $old_stock = $product->get_stock_quantity();
+
+        // Update stock quantity
+        $product->set_stock_quantity($new_stock);
+        $product->set_manage_stock(true);
+
+        // Set stock status based on quantity
+        if ($new_stock > 0) {
+            $product->set_stock_status('instock');
+        } else {
+            $product->set_stock_status('outofstock');
+        }
+
+        // Save product
+        $result = $product->save();
+
+        if ($result) {
+            $sync_results['updated']++;
+            $sync_results['details'][] = sprintf(
+                __('Product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration'),
+                $product->get_name(),
+                $sku,
+                $old_stock,
+                $new_stock
+            );
+
+            // Fire product stock updated hook
+            do_action('woo_odoo_integration_product_stock_updated', $product->get_id(), $old_stock, $new_stock);
+
+            $logger->info(sprintf(
+                'Updated product stock: %s (SKU: %s) from %d to %d',
+                $product->get_name(),
+                $sku,
+                $old_stock,
+                $new_stock
+            ), array('source' => 'woo-odoo-product-sync'));
+        } else {
+            $sync_results['errors']++;
+            $sync_results['details'][] = sprintf(
+                __('Product %s (SKU: %s) failed to update', 'woo-odoo-integration'),
+                $product->get_name(),
+                $sku
+            );
+
+            $logger->error(sprintf(
+                'Failed to update product stock: %s (SKU: %s)',
+                $product->get_name(),
+                $sku
+            ), array('source' => 'woo-odoo-product-sync'));
+        }
+    }
+
+    // Fire after sync hook
+    do_action('woo_odoo_integration_after_sync_product_stock', $sync_results);
+
+    $logger->info(sprintf(
+        'Product stock sync completed. Updated: %d, Skipped: %d, Errors: %d',
+        $sync_results['updated'],
+        $sync_results['skipped'],
+        $sync_results['errors']
+    ), array('source' => 'woo-odoo-product-sync'));
+
+    return $sync_results;
 }
 
 /**

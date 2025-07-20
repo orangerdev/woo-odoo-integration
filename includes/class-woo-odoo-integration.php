@@ -120,7 +120,9 @@ class Woo_Odoo_Integration
          * The class responsible for defining all actions that occur in the admin area.
          */
         require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-admin.php';
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-product.php';
         require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-user.php';
+
 
         /**
          * The class responsible for defining all actions that occur in the public-facing
@@ -197,6 +199,24 @@ class Woo_Odoo_Integration
         // Bulk action hooks for Users admin page
         $this->loader->add_filter('bulk_actions-users', $user_handler, 'add_bulk_customer_sync_action');
         $this->loader->add_filter('handle_bulk_actions-users', $user_handler, 'handle_bulk_customer_sync', 10, 3);
+
+        // Product management hooks
+        $product_handler = new Woo_Odoo_Integration\Admin\Product($this->get_plugin_name(), $this->get_version());
+
+        // Bulk action hooks for Products admin page
+        $this->loader->add_filter('bulk_actions-edit-product', $product_handler, 'add_bulk_actions');
+        $this->loader->add_filter('handle_bulk_actions-edit-product', $product_handler, 'handle_bulk_actions', 10, 3);
+
+        // Admin notices for product sync results
+        $this->loader->add_action('admin_notices', $product_handler, 'display_admin_notices');
+
+        // Single product sync hooks
+        $this->loader->add_action('woocommerce_product_options_stock_status', $product_handler, 'add_product_sync_button');
+        $this->loader->add_action('wp_ajax_woo_odoo_sync_single_product', $product_handler, 'handle_ajax_sync_single_product');
+
+        // Admin script and style hooks for products
+        $this->loader->add_action('admin_enqueue_scripts', $product_handler, 'enqueue_admin_scripts');
+
 
     }
 

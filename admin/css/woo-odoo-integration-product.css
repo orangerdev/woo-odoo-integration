@@ -1,0 +1,160 @@
+/**
+ * WooCommerce Odoo Integration - Product Management Styles
+ *
+ * Styles for product synchronization functionality including
+ * bulk actions and single product sync buttons.
+ *
+ * @since      1.0.0
+ * @package    Woo_Odoo_Integration
+ * @subpackage Woo_Odoo_Integration/admin/css
+ * @author     Ridwan Arifandi <orangerdigiart@gmail.com>
+ */
+
+/* Single Product Sync Button */
+.woo-odoo-sync-single-product {
+	background: #2271b1;
+	color: #fff;
+	border-color: #2271b1;
+	transition: background-color 0.2s ease;
+}
+
+.woo-odoo-sync-single-product:hover {
+	background: #135e96;
+	border-color: #135e96;
+	color: #fff;
+}
+
+.woo-odoo-sync-single-product:focus {
+	background: #135e96;
+	border-color: #135e96;
+	color: #fff;
+	box-shadow: 0 0 0 1px #135e96;
+}
+
+.woo-odoo-sync-single-product.updating-message,
+.woo-odoo-sync-single-product:disabled {
+	background: #c3c4c7;
+	border-color: #c3c4c7;
+	color: #fff;
+	cursor: not-allowed;
+}
+
+/* Odoo Integration Options Group */
+.options_group .woo-odoo-sync-single-product {
+	margin-top: 5px;
+}
+
+/* Admin Notices Enhancement */
+.notice.woo-odoo-integration {
+	border-left-color: #2271b1;
+}
+
+.notice.woo-odoo-integration.notice-success {
+	border-left-color: #00a32a;
+}
+
+.notice.woo-odoo-integration.notice-error {
+	border-left-color: #d63638;
+}
+
+.notice.woo-odoo-integration.notice-warning {
+	border-left-color: #dba617;
+}
+
+/* Loading Animation */
+.woo-odoo-sync-single-product.updating-message::after {
+	content: "";
+	display: inline-block;
+	width: 16px;
+	height: 16px;
+	margin-left: 8px;
+	border: 2px solid #fff;
+	border-top-color: transparent;
+	border-radius: 50%;
+	animation: woo-odoo-spin 1s linear infinite;
+	vertical-align: middle;
+}
+
+@keyframes woo-odoo-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Bulk Actions Enhancement */
+.tablenav-pages .bulk-actions select[name="action"],
+.tablenav-pages .bulk-actions select[name="action2"] {
+	min-width: 200px;
+}
+
+/* Product Stock Display Enhancement */
+.column-stock .stock {
+	display: inline-block;
+	padding: 3px 8px;
+	border-radius: 3px;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.column-stock .stock.instock {
+	background: #c6e1c6;
+	color: #2e5b2e;
+}
+
+.column-stock .stock.outofstock {
+	background: #ffe6e6;
+	color: #8b2635;
+}
+
+/* Responsive Design */
+@media screen and (max-width: 782px) {
+	.woo-odoo-sync-single-product {
+		padding: 8px 14px;
+		font-size: 13px;
+	}
+
+	.options_group .woo-odoo-sync-single-product {
+		width: 100%;
+		margin-top: 10px;
+	}
+}
+
+/* RTL Support */
+body.rtl .woo-odoo-sync-single-product.updating-message::after {
+	margin-left: 0;
+	margin-right: 8px;
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+	.woo-odoo-sync-single-product {
+		background: #000;
+		border-color: #000;
+		color: #fff;
+	}
+
+	.woo-odoo-sync-single-product:hover {
+		background: #333;
+		border-color: #333;
+	}
+}
+
+/* Focus Visible Enhancement */
+.woo-odoo-sync-single-product:focus-visible {
+	outline: 2px solid #2271b1;
+	outline-offset: 2px;
+}
+
+/* Product Meta Box Styling */
+.woocommerce_options_panel .options_group:has(.woo-odoo-sync-single-product) {
+	border-top: 1px solid #ddd;
+	padding-top: 15px;
+}
+
+.woocommerce_options_panel
+	.options_group
+	.form-field:has(.woo-odoo-sync-single-product)
+	label {
+	font-weight: 600;
+	color: #2271b1;
+}
