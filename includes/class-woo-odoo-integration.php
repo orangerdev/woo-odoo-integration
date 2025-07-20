@@ -104,6 +104,8 @@ class Woo_Odoo_Integration
         // Load any necessary helper functions or classes
         require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'helper/api.php';
 
+
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'includes/class-woo-odoo-integration-scheduler.php';
         /**
          * The class responsible for orchestrating the actions and filters of the
          * core plugin.
@@ -121,6 +123,7 @@ class Woo_Odoo_Integration
          */
         require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-admin.php';
         require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-product.php';
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-scheduler-admin.php';
         require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-user.php';
 
 
@@ -217,6 +220,20 @@ class Woo_Odoo_Integration
         // Admin script and style hooks for products
         $this->loader->add_action('admin_enqueue_scripts', $product_handler, 'enqueue_admin_scripts');
 
+        // Scheduler for automatic product sync
+        $scheduler = new Woo_Odoo_Integration_Scheduler($this->get_plugin_name(), $this->get_version());
+        $this->loader->add_action('wp_loaded', $scheduler, 'init_scheduler');
+
+        // Scheduler admin interface
+        $scheduler_admin = new Woo_Odoo_Integration\Admin\Scheduler_Admin($this->get_plugin_name(), $this->get_version());
+        $this->loader->add_action('admin_menu', $scheduler_admin, 'add_admin_menu');
+        $this->loader->add_action('admin_init', $scheduler_admin, 'register_settings');
+        $this->loader->add_action('admin_enqueue_scripts', $scheduler_admin, 'enqueue_admin_scripts');
+
+        // AJAX hooks for scheduler admin
+        $this->loader->add_action('wp_ajax_woo_odoo_trigger_auto_sync', $scheduler_admin, 'handle_ajax_trigger_sync');
+        $this->loader->add_action('wp_ajax_woo_odoo_get_sync_status', $scheduler_admin, 'handle_ajax_get_status');
+        $this->loader->add_action('wp_ajax_woo_odoo_clear_sync_queue', $scheduler_admin, 'handle_ajax_clear_queue');
 
     }
 
