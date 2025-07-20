@@ -224,7 +224,7 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
     }
 
     // Build full URL
-    $api_base_url = defined('WOO_ODOO_INTEGRATION_API_BASE_URL') ? WOO_ODOO_INTEGRATION_API_BASE_URL : get_option('woo_odoo_integration_api_base_url');
+    $api_base_url = defined('WOO_ODOO_INTEGRATION_API_BASE_URL') ? WOO_ODOO_INTEGRATION_API_BASE_URL : carbon_get_theme_option('odoo_url');
     $url = trailingslashit($api_base_url) . ltrim($endpoint, '/');
 
     // Prepare request arguments
