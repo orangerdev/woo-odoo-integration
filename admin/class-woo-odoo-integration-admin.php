@@ -120,10 +120,16 @@ class Admin
             ->add_fields(array(
                 Field::make('text', 'odoo_url', __('Odoo URL'))
                     ->set_help_text(__('Enter your Odoo instance URL')),
-                Field::make('text', 'client_id', __('Client ID'))
+                Field::make('text', 'odoo_client_id', __('Client ID'))
                     ->set_help_text(__('Enter your Odoo Client ID')),
-                Field::make('text', 'client_secret', __('Client Secret'))
+                Field::make('text', 'odoo_client_secret', __('Client Secret'))
                     ->set_help_text(__('Enter your Odoo Client Secret')),
+                Field::make('text', 'odoo_grant_type', __('Grant Type'))
+                    ->set_help_text(__('Enter the grant type, e.g., client_credentials'))
+                    ->set_default_value('client_credentials'),
+                Field::make('text', 'odoo_scope', __('Scope'))
+                    ->set_help_text(__('Enter the scope for the Odoo API, e.g., all'))
+                    ->set_default_value('all'),
 
             ));
     }
