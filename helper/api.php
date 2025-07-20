@@ -654,7 +654,8 @@ function woo_odoo_integration_api_get_countries($force_refresh = false)
         // Return cached data if API fails and we have it
         $cached_countries = get_option($cache_key, false);
         if ($cached_countries !== false) {
-            error_log('WooOdoo Integration: API failed, using cached countries data');
+            $logger = \wc_get_logger();
+            $logger->warning('API failed, using cached countries data', array('source' => 'woo-odoo-countries'));
             return $cached_countries;
         }
 
@@ -701,7 +702,8 @@ function woo_odoo_integration_get_country_uuid($country_identifier)
     $countries = woo_odoo_integration_api_get_countries();
 
     if (is_wp_error($countries)) {
-        error_log('WooOdoo Integration: Failed to get countries for mapping: ' . $countries->get_error_message());
+        $logger = \wc_get_logger();
+        $logger->error('Failed to get countries for mapping: ' . $countries->get_error_message(), array('source' => 'woo-odoo-countries'));
         return false;
     }
 
@@ -741,11 +743,12 @@ function woo_odoo_integration_get_country_uuid($country_identifier)
     }
 
     // Log if country not found for debugging
-    error_log(sprintf(
-        'WooOdoo Integration: Country not found in Odoo: "%s" (WC name: "%s")',
+    $logger = \wc_get_logger();
+    $logger->debug(sprintf(
+        'Country not found in Odoo: "%s" (WC name: "%s")',
         $country_identifier,
         $country_name
-    ));
+    ), array('source' => 'woo-odoo-countries'));
 
     return false;
 }

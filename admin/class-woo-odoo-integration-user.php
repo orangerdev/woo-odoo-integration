@@ -95,7 +95,8 @@ class User
     {
         // Validate customer ID
         if (empty($customer_id) || !is_numeric($customer_id)) {
-            error_log('WooOdoo Integration: Invalid customer ID provided for Odoo sync');
+            $logger = \wc_get_logger();
+            $logger->error('Invalid customer ID provided for Odoo sync', array('source' => 'woo-odoo-customer-sync'));
             return;
         }
 
@@ -217,13 +218,15 @@ class User
     {
         // Validate customer ID
         if (empty($customer_id) || !is_numeric($customer_id)) {
-            error_log('WooOdoo Integration: Invalid customer ID for scheduled sync');
+            $logger = \wc_get_logger();
+            $logger->error('Invalid customer ID for scheduled sync', array('source' => 'woo-odoo-customer-sync'));
             return;
         }
 
         // Check if WooCommerce is active
         if (!class_exists('WC_Customer')) {
-            error_log('WooOdoo Integration: WooCommerce not active, cannot sync customer');
+            $logger = \wc_get_logger();
+            $logger->error('WooCommerce not active, cannot sync customer', array('source' => 'woo-odoo-customer-sync'));
             return;
         }
 
@@ -233,33 +236,36 @@ class User
 
             if (is_wp_error($result)) {
                 // Log error for admin review
-                error_log(sprintf(
-                    'WooOdoo Integration: Failed to sync customer %d to Odoo. Error: %s',
+                $logger = \wc_get_logger();
+                $logger->error(sprintf(
+                    'Failed to sync customer %d to Odoo. Error: %s',
                     $customer_id,
                     $result->get_error_message()
-                ));
+                ), array('source' => 'woo-odoo-customer-sync'));
 
                 // Store sync failure for retry
                 update_user_meta($customer_id, '_odoo_sync_failed', current_time('timestamp'));
                 update_user_meta($customer_id, '_odoo_sync_error', $result->get_error_message());
             } else {
                 // Log success
-                error_log(sprintf(
-                    'WooOdoo Integration: Successfully synced customer %d to Odoo. UUID: %s',
+                $logger = \wc_get_logger();
+                $logger->info(sprintf(
+                    'Successfully synced customer %d to Odoo. UUID: %s',
                     $customer_id,
                     isset($result['uuid']) ? $result['uuid'] : 'unknown'
-                ));
+                ), array('source' => 'woo-odoo-customer-sync'));
 
                 // Clear any previous failure markers
                 delete_user_meta($customer_id, '_odoo_sync_failed');
                 delete_user_meta($customer_id, '_odoo_sync_error');
             }
         } catch (\Exception $e) {
-            error_log(sprintf(
-                'WooOdoo Integration: Exception during customer sync %d: %s',
+            $logger = \wc_get_logger();
+            $logger->error(sprintf(
+                'Exception during customer sync %d: %s',
                 $customer_id,
                 $e->getMessage()
-            ));
+            ), array('source' => 'woo-odoo-customer-sync'));
         }
     }
 
@@ -280,13 +286,15 @@ class User
     {
         // Validate customer ID
         if (empty($customer_id) || !is_numeric($customer_id)) {
-            error_log('WooOdoo Integration: Invalid customer ID for scheduled update');
+            $logger = \wc_get_logger();
+            $logger->error('Invalid customer ID for scheduled update', array('source' => 'woo-odoo-customer-update'));
             return;
         }
 
         // Check if WooCommerce is active
         if (!class_exists('WC_Customer')) {
-            error_log('WooOdoo Integration: WooCommerce not active, cannot update customer');
+            $logger = \wc_get_logger();
+            $logger->error('WooCommerce not active, cannot update customer', array('source' => 'woo-odoo-customer-update'));
             return;
         }
 
@@ -296,33 +304,36 @@ class User
 
             if (is_wp_error($result)) {
                 // Log error for admin review
-                error_log(sprintf(
-                    'WooOdoo Integration: Failed to update customer %d in Odoo. Error: %s',
+                $logger = \wc_get_logger();
+                $logger->error(sprintf(
+                    'Failed to update customer %d in Odoo. Error: %s',
                     $customer_id,
                     $result->get_error_message()
-                ));
+                ), array('source' => 'woo-odoo-customer-update'));
 
                 // Store update failure for retry
                 update_user_meta($customer_id, '_odoo_sync_failed', current_time('timestamp'));
                 update_user_meta($customer_id, '_odoo_sync_error', $result->get_error_message());
             } else {
                 // Log success
-                error_log(sprintf(
-                    'WooOdoo Integration: Successfully updated customer %d in Odoo. UUID: %s',
+                $logger = \wc_get_logger();
+                $logger->info(sprintf(
+                    'Successfully updated customer %d in Odoo. UUID: %s',
                     $customer_id,
                     isset($result['uuid']) ? $result['uuid'] : 'unknown'
-                ));
+                ), array('source' => 'woo-odoo-customer-update'));
 
                 // Clear any previous failure markers
                 delete_user_meta($customer_id, '_odoo_sync_failed');
                 delete_user_meta($customer_id, '_odoo_sync_error');
             }
         } catch (\Exception $e) {
-            error_log(sprintf(
-                'WooOdoo Integration: Exception during customer update %d: %s',
+            $logger = \wc_get_logger();
+            $logger->error(sprintf(
+                'Exception during customer update %d: %s',
                 $customer_id,
                 $e->getMessage()
-            ));
+            ), array('source' => 'woo-odoo-customer-update'));
         }
     }
 
