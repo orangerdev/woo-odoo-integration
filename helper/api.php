@@ -494,3 +494,239 @@ function woo_odoo_integration_api_token_expires_soon($threshold_seconds = 300)
 
     return $time_until_expiry <= $threshold_seconds;
 }
+
+/**
+ * Create customer in Odoo ERP system
+ *
+ * Creates a new customer record in Odoo using the /api/customers endpoint.
+ * Maps WooCommerce customer data to Odoo customer fields.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @hooks    Fires the following hooks:
+ *           - do_action('woo_odoo_integration_before_create_customer', $customer_data)
+ *           - do_action('woo_odoo_integration_after_create_customer', $odoo_customer_data, $wc_customer_id)
+ *           - do_action('woo_odoo_integration_create_customer_failed', $error, $customer_data)
+ *
+ * @param    array    $customer_data    Customer data array with required fields
+ * @param    int      $wc_customer_id   WooCommerce customer ID (optional, for meta storage)
+ *
+ * @return   array|WP_Error           Odoo customer data on success, WP_Error on failure
+ *
+ * @throws   InvalidArgumentException When required customer fields are missing
+ */
+function woo_odoo_integration_api_create_customer($customer_data, $wc_customer_id = null)
+{
+    // Fire before create customer hook
+    do_action('woo_odoo_integration_before_create_customer', $customer_data);
+
+    // Validate required fields
+    $required_fields = array('name', 'email');
+    foreach ($required_fields as $field) {
+        if (empty($customer_data[$field])) {
+            $error = new WP_Error(
+                'missing_required_field',
+                sprintf(__('Required field "%s" is missing for customer creation', 'woo-odoo-integration'), $field),
+                array('status' => 400, 'field' => $field)
+            );
+
+            do_action('woo_odoo_integration_create_customer_failed', $error, $customer_data);
+            return $error;
+        }
+    }
+
+    // Prepare customer data for Odoo API
+    $odoo_customer_data = array(
+        'name' => sanitize_text_field($customer_data['name']),
+        'email' => sanitize_email($customer_data['email']),
+        'street' => isset($customer_data['street']) ? sanitize_text_field($customer_data['street']) : '',
+        'street2' => isset($customer_data['street2']) ? sanitize_text_field($customer_data['street2']) : '',
+        'city' => isset($customer_data['city']) ? sanitize_text_field($customer_data['city']) : '',
+        'zip' => isset($customer_data['zip']) ? sanitize_text_field($customer_data['zip']) : '',
+        'vat' => isset($customer_data['vat']) ? sanitize_text_field($customer_data['vat']) : '',
+        'phone' => isset($customer_data['phone']) ? sanitize_text_field($customer_data['phone']) : '',
+        'mobile' => isset($customer_data['mobile']) ? sanitize_text_field($customer_data['mobile']) : '',
+        'state_id' => isset($customer_data['state_id']) ? sanitize_text_field($customer_data['state_id']) : '',
+        'country_id' => isset($customer_data['country_id']) ? sanitize_text_field($customer_data['country_id']) : '',
+    );
+
+    // Remove empty fields to avoid API issues
+    $odoo_customer_data = array_filter($odoo_customer_data, function ($value) {
+        return !empty($value);
+    });
+
+    // Apply filters to customer data before sending
+    $odoo_customer_data = apply_filters('woo_odoo_integration_customer_data', $odoo_customer_data, $customer_data);
+
+    // Make API request to create customer
+    $response = woo_odoo_integration_api_post('api/customers', $odoo_customer_data);
+
+    if (is_wp_error($response)) {
+        do_action('woo_odoo_integration_create_customer_failed', $response, $customer_data);
+        return $response;
+    }
+
+    // Parse Odoo response
+    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
+        $error = new WP_Error(
+            'odoo_create_customer_failed',
+            __('Odoo API returned unexpected response format', 'woo-odoo-integration'),
+            array('status' => 500, 'response' => $response)
+        );
+
+        do_action('woo_odoo_integration_create_customer_failed', $error, $customer_data);
+        return $error;
+    }
+
+    // Get created customer data
+    $created_customer = $response['data'][0];
+
+    // Store Odoo customer UUID in WooCommerce if customer ID provided
+    if ($wc_customer_id && isset($created_customer['uuid'])) {
+        update_user_meta($wc_customer_id, '_odoo_customer_uuid', sanitize_text_field($created_customer['uuid']));
+        update_user_meta($wc_customer_id, '_odoo_last_sync', current_time('timestamp'));
+    }
+
+    // Fire after create customer hook
+    do_action('woo_odoo_integration_after_create_customer', $created_customer, $wc_customer_id);
+
+    return $created_customer;
+}
+
+/**
+ * Get customer from Odoo by UUID
+ *
+ * Retrieves customer information from Odoo using customer UUID.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @param    string    $customer_uuid    Odoo customer UUID
+ *
+ * @return   array|WP_Error           Customer data on success, WP_Error on failure
+ */
+function woo_odoo_integration_api_get_customer($customer_uuid)
+{
+    if (empty($customer_uuid)) {
+        return new WP_Error(
+            'missing_customer_uuid',
+            __('Customer UUID is required', 'woo-odoo-integration'),
+            array('status' => 400)
+        );
+    }
+
+    $endpoint = 'api/customers/' . sanitize_text_field($customer_uuid);
+    return woo_odoo_integration_api_get($endpoint);
+}
+
+/**
+ * Update customer in Odoo
+ *
+ * Updates existing customer information in Odoo ERP system.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @param    string    $customer_uuid    Odoo customer UUID
+ * @param    array     $customer_data    Updated customer data
+ *
+ * @return   array|WP_Error           Updated customer data on success, WP_Error on failure
+ */
+function woo_odoo_integration_api_update_customer($customer_uuid, $customer_data)
+{
+    if (empty($customer_uuid)) {
+        return new WP_Error(
+            'missing_customer_uuid',
+            __('Customer UUID is required for update', 'woo-odoo-integration'),
+            array('status' => 400)
+        );
+    }
+
+    // Sanitize customer data
+    $sanitized_data = array();
+    $allowed_fields = array('name', 'email', 'street', 'street2', 'city', 'zip', 'vat', 'phone', 'mobile', 'state_id', 'country_id');
+
+    foreach ($allowed_fields as $field) {
+        if (isset($customer_data[$field]) && !empty($customer_data[$field])) {
+            if ('email' === $field) {
+                $sanitized_data[$field] = sanitize_email($customer_data[$field]);
+            } else {
+                $sanitized_data[$field] = sanitize_text_field($customer_data[$field]);
+            }
+        }
+    }
+
+    $endpoint = 'api/customers/' . sanitize_text_field($customer_uuid);
+    return woo_odoo_integration_api_put($endpoint, $sanitized_data);
+}
+
+/**
+ * Sync WooCommerce customer to Odoo
+ *
+ * Creates or updates customer in Odoo based on WooCommerce customer data.
+ * Checks if customer already exists in Odoo before creating new one.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @param    int      $wc_customer_id    WooCommerce customer ID
+ * @param    bool     $force_update      Force update even if already synced (default: false)
+ *
+ * @return   array|WP_Error           Odoo customer data on success, WP_Error on failure
+ */
+function woo_odoo_integration_api_sync_customer($wc_customer_id, $force_update = false)
+{
+    // Validate customer ID
+    if (!is_numeric($wc_customer_id) || $wc_customer_id <= 0) {
+        return new WP_Error(
+            'invalid_customer_id',
+            __('Invalid WooCommerce customer ID provided', 'woo-odoo-integration'),
+            array('status' => 400)
+        );
+    }
+
+    // Get WooCommerce customer
+    $wc_customer = new WC_Customer($wc_customer_id);
+    if (!$wc_customer->get_id()) {
+        return new WP_Error(
+            'customer_not_found',
+            __('WooCommerce customer not found', 'woo-odoo-integration'),
+            array('status' => 404)
+        );
+    }
+
+    // Check if customer is already synced (unless forcing update)
+    $odoo_customer_uuid = get_user_meta($wc_customer_id, '_odoo_customer_uuid', true);
+    if (!empty($odoo_customer_uuid) && !$force_update) {
+        // Customer already exists in Odoo, return existing data
+        return woo_odoo_integration_api_get_customer($odoo_customer_uuid);
+    }
+
+    // Prepare customer data for Odoo
+    $billing_address = array(
+        'street' => $wc_customer->get_billing_address_1(),
+        'street2' => $wc_customer->get_billing_address_2(),
+        'city' => $wc_customer->get_billing_city(),
+        'zip' => $wc_customer->get_billing_postcode(),
+        'state_id' => $wc_customer->get_billing_state(),
+        'country_id' => $wc_customer->get_billing_country(),
+    );
+
+    $customer_data = array(
+        'name' => trim($wc_customer->get_first_name() . ' ' . $wc_customer->get_last_name()),
+        'email' => $wc_customer->get_email(),
+        'phone' => $wc_customer->get_billing_phone(),
+        'mobile' => $wc_customer->get_billing_phone(), // Use same phone for mobile
+    );
+
+    // Add billing address data
+    $customer_data = array_merge($customer_data, $billing_address);
+
+    // Create or update customer in Odoo
+    if (!empty($odoo_customer_uuid) && $force_update) {
+        return woo_odoo_integration_api_update_customer($odoo_customer_uuid, $customer_data);
+    } else {
+        return woo_odoo_integration_api_create_customer($customer_data, $wc_customer_id);
+    }
+}

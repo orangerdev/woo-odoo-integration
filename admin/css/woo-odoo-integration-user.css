@@ -1,0 +1,263 @@
+/**
+ * WooCommerce Odoo Integration - User/Customer Admin Styles
+ *
+ * Styles for customer sync functionality in the WordPress admin area.
+ *
+ * @since      1.0.0
+ * @package    WooOdooIntegration
+ * @subpackage WooOdooIntegration/admin/css
+ */
+
+/* Odoo Status Display */
+.woo-odoo-user-status {
+	background: #f9f9f9;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	padding: 15px;
+	margin-top: 15px;
+}
+
+.woo-odoo-user-status h3 {
+	margin-top: 0;
+	margin-bottom: 10px;
+	font-size: 14px;
+	font-weight: 600;
+	color: #23282d;
+}
+
+.woo-odoo-status-info {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.woo-odoo-status-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 5px 0;
+	border-bottom: 1px solid #e5e5e5;
+}
+
+.woo-odoo-status-row:last-child {
+	border-bottom: none;
+}
+
+.woo-odoo-status-label {
+	font-weight: 500;
+	color: #555;
+	min-width: 120px;
+}
+
+.woo-odoo-status-value {
+	color: #23282d;
+	font-family: monospace;
+	font-size: 12px;
+}
+
+/* Status Indicators */
+.woo-odoo-status-synced {
+	color: #46b450;
+	font-weight: 600;
+}
+
+.woo-odoo-status-not-synced {
+	color: #dc3232;
+	font-weight: 600;
+}
+
+.woo-odoo-status-failed {
+	color: #ffb900;
+	font-weight: 600;
+}
+
+.woo-odoo-status-pending {
+	color: #00a0d2;
+	font-weight: 600;
+}
+
+/* Sync Button */
+.woo-odoo-sync-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	margin-top: 10px;
+	padding: 6px 12px;
+	background: #0073aa;
+	color: #fff;
+	border: none;
+	border-radius: 3px;
+	cursor: pointer;
+	font-size: 13px;
+	text-decoration: none;
+	transition: background-color 0.2s;
+}
+
+.woo-odoo-sync-button:hover {
+	background: #005a87;
+	color: #fff;
+}
+
+.woo-odoo-sync-button:disabled {
+	background: #ccc;
+	cursor: not-allowed;
+}
+
+.woo-odoo-sync-button .dashicons {
+	font-size: 16px;
+	line-height: 1;
+}
+
+.woo-odoo-sync-button.syncing {
+	background: #f56e28;
+}
+
+.woo-odoo-sync-button.syncing .dashicons {
+	animation: spin 1s linear infinite;
+}
+
+/* Spin Animation */
+@keyframes spin {
+	0% {
+		transform: rotate(0deg);
+	}
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+/* Bulk Actions */
+.woo-odoo-bulk-sync-notice {
+	background: #fff;
+	border-left: 4px solid #0073aa;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+	padding: 1px 12px;
+}
+
+/* Admin Notices */
+.woo-odoo-notice {
+	position: relative;
+}
+
+.woo-odoo-notice .notice-dismiss {
+	text-decoration: none;
+}
+
+.woo-odoo-sync-errors {
+	background: #fff;
+	border-left: 4px solid #dc3232;
+	padding: 12px;
+	margin: 5px 15px 2px;
+}
+
+.woo-odoo-sync-errors ul {
+	margin: 0.5em 0;
+	padding-left: 2em;
+}
+
+.woo-odoo-sync-errors li {
+	margin-bottom: 0.5em;
+}
+
+/* User List Custom Column */
+.column-odoo_status {
+	width: 10%;
+}
+
+.odoo-status-indicator {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	margin-right: 6px;
+}
+
+.odoo-status-synced .odoo-status-indicator {
+	background-color: #46b450;
+}
+
+.odoo-status-not-synced .odoo-status-indicator {
+	background-color: #dc3232;
+}
+
+.odoo-status-failed .odoo-status-indicator {
+	background-color: #ffb900;
+}
+
+.odoo-status-pending .odoo-status-indicator {
+	background-color: #00a0d2;
+}
+
+/* Responsive Design */
+@media screen and (max-width: 782px) {
+	.woo-odoo-status-row {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 5px;
+	}
+
+	.woo-odoo-status-label {
+		min-width: auto;
+		font-size: 12px;
+	}
+
+	.woo-odoo-status-value {
+		font-size: 11px;
+	}
+
+	.woo-odoo-sync-button {
+		width: 100%;
+		justify-content: center;
+		margin-top: 15px;
+	}
+}
+
+/* Loading States */
+.woo-odoo-loading {
+	position: relative;
+	opacity: 0.6;
+}
+
+.woo-odoo-loading::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 20px;
+	height: 20px;
+	margin: -10px 0 0 -10px;
+	border: 2px solid #f3f3f3;
+	border-top: 2px solid #0073aa;
+	border-radius: 50%;
+	animation: spin 1s linear infinite;
+}
+
+/* Success Messages */
+.woo-odoo-success {
+	color: #46b450;
+	font-weight: 600;
+}
+
+.woo-odoo-error {
+	color: #dc3232;
+	font-weight: 600;
+}
+
+/* Sync History */
+.woo-odoo-sync-history {
+	margin-top: 10px;
+	font-size: 12px;
+	color: #666;
+}
+
+.woo-odoo-sync-history strong {
+	color: #23282d;
+}
+
+/* Help Text */
+.woo-odoo-help-text {
+	font-style: italic;
+	color: #666;
+	font-size: 12px;
+	margin-top: 5px;
+}

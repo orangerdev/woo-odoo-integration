@@ -120,6 +120,7 @@ class Woo_Odoo_Integration
          * The class responsible for defining all actions that occur in the admin area.
          */
         require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-admin.php';
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-user.php';
 
         /**
          * The class responsible for defining all actions that occur in the public-facing
@@ -163,6 +164,31 @@ class Woo_Odoo_Integration
 
         $this->loader->add_action('after_setup_theme', $admin, 'crb_load');
         $this->loader->add_action('carbon_fields_register_fields', $admin, 'crb_register_fields');
+
+        // User/Customer management hooks
+        $user_handler = new Woo_Odoo_Integration\Admin\User($this->get_plugin_name(), $this->get_version());
+
+        // WooCommerce customer registration and checkout hooks
+        $this->loader->add_action('woocommerce_created_customer', $user_handler, 'sync_customer_to_odoo_after_registration', 10, 1);
+        $this->loader->add_action('woocommerce_checkout_order_processed', $user_handler, 'sync_customer_to_odoo_after_checkout', 10, 1);
+
+        // Admin user profile hooks
+        $this->loader->add_action('show_user_profile', $user_handler, 'show_customer_odoo_status');
+        $this->loader->add_action('edit_user_profile', $user_handler, 'show_customer_odoo_status');
+
+        // AJAX hooks for manual sync
+        $this->loader->add_action('wp_ajax_woo_odoo_sync_customer', $user_handler, 'handle_manual_customer_sync');
+
+        // Admin script and style hooks
+        $this->loader->add_action('admin_enqueue_scripts', $user_handler, 'enqueue_admin_scripts');
+
+        // Admin notice hooks
+        $this->loader->add_action('admin_notices', $user_handler, 'show_sync_failure_notices');
+        $this->loader->add_action('admin_notices', $user_handler, 'show_bulk_sync_notice');
+
+        // Bulk action hooks for Users admin page
+        $this->loader->add_filter('bulk_actions-users', $user_handler, 'add_bulk_customer_sync_action');
+        $this->loader->add_filter('handle_bulk_actions-users', $user_handler, 'handle_bulk_customer_sync', 10, 3);
 
     }
 
