@@ -159,8 +159,8 @@ class Woo_Odoo_Integration
 
         $admin = new Woo_Odoo_Integration\Admin($this->get_plugin_name(), $this->get_version());
 
-        $this->loader->add_action('admin_enqueue_scripts', $admin, 'enqueue_styles');
-        $this->loader->add_action('admin_enqueue_scripts', $admin, 'enqueue_scripts');
+        $this->loader->add_action('after_setup_theme', $admin, 'crb_load');
+        $this->loader->add_action('carbon_fields_register_fields', $admin, 'crb_register_fields');
 
     }
 

@@ -5,5 +5,13 @@
 		"phpstan/phpstan": "^1.8",
 		"wp-coding-standards/wpcs": "^2.3",
 		"dealerdirect/phpcodesniffer-composer-installer": "^0.7"
+	},
+	"config": {
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		}
+	},
+	"require": {
+		"htmlburger/carbon-fields": "^3.6"
 	}
 }

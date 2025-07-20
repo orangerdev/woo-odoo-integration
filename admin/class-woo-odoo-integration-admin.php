@@ -2,6 +2,9 @@
 
 namespace Woo_Odoo_Integration;
 
+use Carbon_Fields\Container;
+use Carbon_Fields\Field;
+
 /**
  * The admin-specific functionality of the plugin.
  *
@@ -15,12 +18,18 @@ namespace Woo_Odoo_Integration;
 /**
  * The admin-specific functionality of the plugin.
  *
- * Defines the plugin name, version, and two examples hooks for how to
- * enqueue the admin-specific stylesheet and JavaScript.
+ * Handles all WordPress admin area functionality including Carbon Fields
+ * initialization, admin styles/scripts enqueuing, and admin-specific
+ * features for the WooCommerce Odoo Integration plugin.
  *
+ * @since      1.0.0
  * @package    Woo_Odoo_Integration
- * @subpackage Woo_Odoo_Integration/admin
+ * @subpackage Woo_Odoo_Integration/Admin
  * @author     Ridwan Arifandi <orangerdigiart@gmail.com>
+ *
+ * @hooks      WordPress hooks this class interacts with:
+ *             - after_setup_theme (for Carbon Fields initialization)
+ *             - admin_enqueue_scripts (for loading admin styles and scripts)
  */
 class Admin
 {
@@ -46,9 +55,17 @@ class Admin
     /**
      * Initialize the class and set its properties.
      *
+     * Sets up the admin class with plugin name and version information.
+     * These properties are used throughout the class for identifying
+     * the plugin in WordPress admin context.
+     *
      * @since    1.0.0
-     * @param      string    $plugin_name       The name of this plugin.
-     * @param      string    $version    The version of this plugin.
+     * @access   public
+     *
+     * @param    string    $plugin_name    The name of this plugin
+     * @param    string    $version        The version of this plugin
+     *
+     * @return   void
      */
     public function __construct($plugin_name, $version)
     {
@@ -58,52 +75,58 @@ class Admin
 
     }
 
-    /**
-     * Register the stylesheets for the admin area.
-     *
-     * @since    1.0.0
-     */
-    public function enqueue_styles()
-    {
-
-        /**
-         * This function is provided for demonstration purposes only.
-         *
-         * An instance of this class should be passed to the run() function
-         * defined in Woo_Odoo_Integration_Loader as all of the hooks are defined
-         * in that particular class.
-         *
-         * The Woo_Odoo_Integration_Loader will then create the relationship
-         * between the defined hooks and the functions defined in this
-         * class.
-         */
-
-        wp_enqueue_style($this->plugin_name, plugin_dir_url(__FILE__) . 'css/woo-odoo-integration-admin.css', array(), $this->version, 'all');
-
-    }
 
     /**
-     * Register the JavaScript for the admin area.
+     * Initialize Carbon Fields library
+     *
+     * Loads the Carbon Fields library from vendor directory and boots it up
+     * for use in the admin area. Carbon Fields is used for creating custom
+     * meta boxes, theme options, and other admin interface elements.
      *
      * @since    1.0.0
+     * @access   public
+     *
+     * @hooks    Should be called from after_setup_theme hook to ensure
+     *           proper Carbon Fields initialization timing
+     *
+     * @return   void
+     *
+     * @throws   Error    If Carbon Fields cannot be loaded from vendor directory
      */
-    public function enqueue_scripts()
+    public function crb_load()
     {
-
-        /**
-         * This function is provided for demonstration purposes only.
-         *
-         * An instance of this class should be passed to the run() function
-         * defined in Woo_Odoo_Integration_Loader as all of the hooks are defined
-         * in that particular class.
-         *
-         * The Woo_Odoo_Integration_Loader will then create the relationship
-         * between the defined hooks and the functions defined in this
-         * class.
-         */
-
-        wp_enqueue_script($this->plugin_name, plugin_dir_url(__FILE__) . 'js/woo-odoo-integration-admin.js', array('jquery'), $this->version, false);
-
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . '/vendor/autoload.php';
+        \Carbon_Fields\Carbon_Fields::boot();
     }
+    /**
+     * Register Carbon Fields fields
+     *
+     * This method is intended to register custom fields using Carbon Fields.
+     * It should be called during the 'carbon_fields_register_fields' action.
+     * You can define your custom fields here for use in the admin area.
+     *
+     * @since    1.0.0
+     * @access   public
+     *
+     * @hooks    carbon_fields_register_fields
+     *
+     * @return   void
+     */
+    public function crb_register_fields()
+    {
+        Container::make('theme_options', __('Odoo Settings'))
+            ->set_page_menu_position(60)
+            ->set_page_menu_title(__('Odoo Settings'))
+            ->add_fields(array(
+                Field::make('text', 'odoo_url', __('Odoo URL'))
+                    ->set_help_text(__('Enter your Odoo instance URL')),
+                Field::make('text', 'client_id', __('Client ID'))
+                    ->set_help_text(__('Enter your Odoo Client ID')),
+                Field::make('text', 'client_secret', __('Client Secret'))
+                    ->set_help_text(__('Enter your Odoo Client Secret')),
+
+            ));
+    }
+
 
 }
