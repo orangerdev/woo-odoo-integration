@@ -58,8 +58,8 @@ function woo_odoo_integration_api_get_access_token($force_refresh = false)
     $api_base_url = defined('WOO_ODOO_INTEGRATION_API_BASE_URL') ? WOO_ODOO_INTEGRATION_API_BASE_URL : carbon_get_theme_option('odoo_url');
     $client_id = defined('WOO_ODOO_INTEGRATION_CLIENT_ID') ? WOO_ODOO_INTEGRATION_CLIENT_ID : carbon_get_theme_option('odoo_client_id');
     $client_secret = defined('WOO_ODOO_INTEGRATION_CLIENT_SECRET') ? WOO_ODOO_INTEGRATION_CLIENT_SECRET : carbon_get_theme_option('odoo_client_secret');
-    $grant_type = defined('WOO_ODOO_INTEGRATION_GRANT_TYPE') ? WOO_ODOO_INTEGRATION_GRANT_TYPE : carbon_get_theme_option('odoo_grant_type', 'client_credentials');
-    $scope = defined('WOO_ODOO_INTEGRATION_SCOPE') ? WOO_ODOO_INTEGRATION_SCOPE : carbon_get_theme_option('odoo_scope', 'all');
+    $grant_type = defined('WOO_ODOO_INTEGRATION_GRANT_TYPE') ? WOO_ODOO_INTEGRATION_GRANT_TYPE : carbon_get_theme_option('odoo_grant_type');
+    $scope = defined('WOO_ODOO_INTEGRATION_SCOPE') ? WOO_ODOO_INTEGRATION_SCOPE : carbon_get_theme_option('odoo_scope');
 
     // Validate required credentials
     if (empty($api_base_url) || empty($client_id) || empty($client_secret)) {

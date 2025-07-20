@@ -101,29 +101,31 @@ class Woo_Odoo_Integration
      */
     private function load_dependencies()
     {
+        // Load any necessary helper functions or classes
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'helper/api.php';
 
         /**
          * The class responsible for orchestrating the actions and filters of the
          * core plugin.
          */
-        require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-woo-odoo-integration-loader.php';
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'includes/class-woo-odoo-integration-loader.php';
 
         /**
          * The class responsible for defining internationalization functionality
          * of the plugin.
          */
-        require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-woo-odoo-integration-i18n.php';
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'includes/class-woo-odoo-integration-i18n.php';
 
         /**
          * The class responsible for defining all actions that occur in the admin area.
          */
-        require_once plugin_dir_path(dirname(__FILE__)) . 'admin/class-woo-odoo-integration-admin.php';
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'admin/class-woo-odoo-integration-admin.php';
 
         /**
          * The class responsible for defining all actions that occur in the public-facing
          * side of the site.
          */
-        require_once plugin_dir_path(dirname(__FILE__)) . 'public/class-woo-odoo-integration-public.php';
+        require_once WOO_ODOO_INTEGRATION_PLUGIN_DIR . 'public/class-woo-odoo-integration-public.php';
 
         $this->loader = new Woo_Odoo_Integration_Loader();
 
