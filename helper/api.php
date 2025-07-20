@@ -547,7 +547,6 @@ function woo_odoo_integration_api_create_customer($customer_data, $wc_customer_i
         'vat' => isset($customer_data['vat']) ? sanitize_text_field($customer_data['vat']) : '',
         'phone' => isset($customer_data['phone']) ? sanitize_text_field($customer_data['phone']) : '',
         'mobile' => isset($customer_data['mobile']) ? sanitize_text_field($customer_data['mobile']) : '',
-        'state_id' => isset($customer_data['state_id']) ? sanitize_text_field($customer_data['state_id']) : '',
         'country_id' => isset($customer_data['country_id']) ? sanitize_text_field($customer_data['country_id']) : '',
     );
 
@@ -621,9 +620,159 @@ function woo_odoo_integration_api_get_customer($customer_uuid)
 }
 
 /**
+ * Get countries from Odoo API with caching
+ *
+ * Retrieves all countries from Odoo API and caches them in WordPress options
+ * to avoid repeated API calls. Countries data is rarely changed.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @param    bool    $force_refresh    Force refresh from API (default: false)
+ *
+ * @return   array|WP_Error          Countries data on success, WP_Error on failure
+ */
+function woo_odoo_integration_api_get_countries($force_refresh = false)
+{
+    $cache_key = 'woo_odoo_integration_countries';
+
+
+    // Check if we should use cached data
+    if (!$force_refresh) {
+        $cached_countries = get_transient($cache_key);
+
+        // Use cached data if available and not expired (cache for 24 hours)
+        if ($cached_countries !== false) {
+            return $cached_countries;
+        }
+    }
+
+    // Fetch countries from API
+    $response = woo_odoo_integration_api_get('api/countries', array('limit' => 250));
+
+    if (is_wp_error($response)) {
+        // Return cached data if API fails and we have it
+        $cached_countries = get_option($cache_key, false);
+        if ($cached_countries !== false) {
+            error_log('WooOdoo Integration: API failed, using cached countries data');
+            return $cached_countries;
+        }
+
+        return $response;
+    }
+
+    // Parse response
+    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
+        return new WP_Error(
+            'odoo_countries_api_error',
+            __('Odoo countries API returned unexpected response format', 'woo-odoo-integration'),
+            array('status' => 500, 'response' => $response)
+        );
+    }
+
+    $countries = $response['data'];
+
+    // Cache the results for 24 hours
+    set_transient($cache_key, $countries, 24 * HOUR_IN_SECONDS);
+
+    return $countries;
+}
+
+/**
+ * Get Odoo country UUID by country name or code
+ *
+ * Maps WooCommerce country codes to Odoo country UUIDs using the countries API.
+ * Supports both country names and ISO codes for mapping.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @param    string    $country_identifier    Country name or ISO code from WooCommerce
+ *
+ * @return   string|false                   Odoo country UUID on success, false if not found
+ */
+function woo_odoo_integration_get_country_uuid($country_identifier)
+{
+    if (empty($country_identifier)) {
+        return false;
+    }
+
+    // Get countries from API (cached)
+    $countries = woo_odoo_integration_api_get_countries();
+
+    if (is_wp_error($countries)) {
+        error_log('WooOdoo Integration: Failed to get countries for mapping: ' . $countries->get_error_message());
+        return false;
+    }
+
+    // First try to get full country name from WooCommerce if it's a country code
+    $wc_countries = new \WC_Countries();
+    $country_name = '';
+
+    // If it looks like a country code (2-3 characters), get the full name
+    if (strlen($country_identifier) <= 3 && ctype_alpha($country_identifier)) {
+        $country_name = $wc_countries->get_countries()[$country_identifier] ?? '';
+    } else {
+        $country_name = $country_identifier;
+    }
+
+    // Search for country in Odoo data
+    foreach ($countries as $country) {
+        // Direct name match (case insensitive)
+        if (strcasecmp($country['name'], $country_name) === 0) {
+            return $country['uuid'];
+        }
+
+        // Also try direct match with the original identifier
+        if (strcasecmp($country['name'], $country_identifier) === 0) {
+            return $country['uuid'];
+        }
+    }
+
+    // If exact match not found, try partial matching for common variations
+    foreach ($countries as $country) {
+        $odoo_name = strtolower($country['name']);
+        $search_name = strtolower($country_name);
+
+        // Check if names are similar (contains each other)
+        if (strpos($odoo_name, $search_name) !== false || strpos($search_name, $odoo_name) !== false) {
+            return $country['uuid'];
+        }
+    }
+
+    // Log if country not found for debugging
+    error_log(sprintf(
+        'WooOdoo Integration: Country not found in Odoo: "%s" (WC name: "%s")',
+        $country_identifier,
+        $country_name
+    ));
+
+    return false;
+}
+
+/**
+ * Clear countries cache
+ *
+ * Removes cached countries data from WordPress options.
+ * Useful for forcing refresh or troubleshooting.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @return   bool    True if cache was cleared successfully
+ */
+function woo_odoo_integration_clear_countries_cache()
+{
+    $result = delete_transient('woo_odoo_integration_countries');
+
+    return $result;
+}
+
+/**
  * Update customer in Odoo
  *
- * Updates existing customer information in Odoo ERP system.
+ * Updates existing customer information in Odoo ERP system using PUT request.
+ * Follows the Odoo API format: PUT /api/customers/{customer_uuid}
  *
  * @since    1.0.0
  * @access   public
@@ -643,22 +792,80 @@ function woo_odoo_integration_api_update_customer($customer_uuid, $customer_data
         );
     }
 
-    // Sanitize customer data
+    // Sanitize and validate customer data
     $sanitized_data = array();
-    $allowed_fields = array('name', 'email', 'street', 'street2', 'city', 'zip', 'vat', 'phone', 'mobile', 'state_id', 'country_id');
+    $allowed_fields = array(
+        'name',
+        'email',
+        'street',
+        'street2',
+        'city',
+        'zip',
+        'vat',
+        'phone',
+        'mobile',
+        'country_id'
+    );
 
     foreach ($allowed_fields as $field) {
-        if (isset($customer_data[$field]) && !empty($customer_data[$field])) {
-            if ('email' === $field) {
-                $sanitized_data[$field] = sanitize_email($customer_data[$field]);
-            } else {
-                $sanitized_data[$field] = sanitize_text_field($customer_data[$field]);
+        if (isset($customer_data[$field])) {
+            switch ($field) {
+                case 'email':
+                    if (!empty($customer_data[$field])) {
+                        $sanitized_data[$field] = sanitize_email($customer_data[$field]);
+                    }
+                    break;
+                case 'zip':
+                case 'vat':
+                    // Handle numeric fields
+                    if (!empty($customer_data[$field])) {
+                        $sanitized_data[$field] = is_numeric($customer_data[$field])
+                            ? intval($customer_data[$field])
+                            : sanitize_text_field($customer_data[$field]);
+                    }
+                    break;
+                case 'country_id':
+                    // Handle country UUID field - should remain as string
+                    if (!empty($customer_data[$field])) {
+                        $sanitized_data[$field] = sanitize_text_field($customer_data[$field]);
+                    }
+                    break;
+                default:
+                    if (!empty($customer_data[$field])) {
+                        $sanitized_data[$field] = sanitize_text_field($customer_data[$field]);
+                    }
+                    break;
             }
         }
     }
 
+    // Ensure we have some data to update
+    if (empty($sanitized_data)) {
+        return new WP_Error(
+            'no_update_data',
+            __('No valid data provided for customer update', 'woo-odoo-integration'),
+            array('status' => 400)
+        );
+    }
+
+    // Make PUT request to update customer
     $endpoint = 'api/customers/' . sanitize_text_field($customer_uuid);
-    return woo_odoo_integration_api_put($endpoint, $sanitized_data);
+    $response = woo_odoo_integration_api_put($endpoint, $sanitized_data);
+
+    if (is_wp_error($response)) {
+        return $response;
+    }
+
+    // Handle the response format: { "code": 200, "data": [...] }
+    if (isset($response['code']) && 200 === $response['code'] && isset($response['data'])) {
+        // Return the first customer data from the response
+        if (is_array($response['data']) && !empty($response['data'])) {
+            return $response['data'][0];
+        }
+    }
+
+    // Fallback: return the whole response if format is different
+    return $response;
 }
 
 /**
@@ -709,9 +916,15 @@ function woo_odoo_integration_api_sync_customer($wc_customer_id, $force_update =
         'street2' => $wc_customer->get_billing_address_2(),
         'city' => $wc_customer->get_billing_city(),
         'zip' => $wc_customer->get_billing_postcode(),
-        'state_id' => $wc_customer->get_billing_state(),
-        'country_id' => $wc_customer->get_billing_country(),
     );
+
+    // Map WooCommerce country to Odoo country UUID
+    $wc_country = $wc_customer->get_billing_country();
+    $odoo_country_uuid = woo_odoo_integration_get_country_uuid($wc_country);
+
+    if ($odoo_country_uuid) {
+        $billing_address['country_id'] = $odoo_country_uuid;
+    }
 
     $customer_data = array(
         'name' => trim($wc_customer->get_first_name() . ' ' . $wc_customer->get_last_name()),
@@ -725,8 +938,20 @@ function woo_odoo_integration_api_sync_customer($wc_customer_id, $force_update =
 
     // Create or update customer in Odoo
     if (!empty($odoo_customer_uuid) && $force_update) {
-        return woo_odoo_integration_api_update_customer($odoo_customer_uuid, $customer_data);
+        // Update existing customer
+        $result = woo_odoo_integration_api_update_customer($odoo_customer_uuid, $customer_data);
+
+        if (!is_wp_error($result)) {
+            // Update sync timestamp for successful update
+            update_user_meta($wc_customer_id, '_odoo_last_sync', current_time('timestamp'));
+
+            // Fire after update customer hook
+            do_action('woo_odoo_integration_after_update_customer', $result, $wc_customer_id);
+        }
+
+        return $result;
     } else {
+        // Create new customer
         return woo_odoo_integration_api_create_customer($customer_data, $wc_customer_id);
     }
 }

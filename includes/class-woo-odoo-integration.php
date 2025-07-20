@@ -172,6 +172,14 @@ class Woo_Odoo_Integration
         $this->loader->add_action('woocommerce_created_customer', $user_handler, 'sync_customer_to_odoo_after_registration', 10, 1);
         $this->loader->add_action('woocommerce_checkout_order_processed', $user_handler, 'sync_customer_to_odoo_after_checkout', 10, 1);
 
+        // WordPress and WooCommerce customer profile update hooks
+        $this->loader->add_action('profile_update', $user_handler, 'sync_customer_to_odoo_after_update', 10, 2);
+        $this->loader->add_action('woocommerce_customer_save', $user_handler, 'sync_customer_to_odoo_after_update', 10, 1);
+
+        // Scheduled action hooks
+        $this->loader->add_action('woo_odoo_integration_sync_customer', $user_handler, 'sync_customer_to_odoo');
+        $this->loader->add_action('woo_odoo_integration_update_customer', $user_handler, 'update_customer_in_odoo');
+
         // Admin user profile hooks
         $this->loader->add_action('show_user_profile', $user_handler, 'show_customer_odoo_status');
         $this->loader->add_action('edit_user_profile', $user_handler, 'show_customer_odoo_status');

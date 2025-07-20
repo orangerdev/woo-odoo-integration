@@ -235,18 +235,49 @@ function woo_odoo_integration_api_update_product( $product_id, $data );
 /**
  * Create customer in Odoo
  *
+ * Creates a new customer in Odoo ERP system using the API endpoint:
+ * POST /api/customers
+ *
  * @param    array    $customer_data    Customer information
- * @return   int|WP_Error              Customer ID or error
+ * @param    int      $wc_customer_id   WooCommerce customer ID (optional)
+ * @return   array|WP_Error            Customer data with UUID or error
  */
-function woo_odoo_integration_api_create_customer( $customer_data );
+function woo_odoo_integration_api_create_customer( $customer_data, $wc_customer_id = null );
 
 /**
  * Retrieve customer from Odoo
  *
- * @param    int      $customer_id    Odoo customer ID
- * @return   array|WP_Error          Customer data or error
+ * Gets customer information from Odoo using the API endpoint:
+ * GET /api/customers/{customer_uuid}
+ *
+ * @param    string   $customer_uuid    Odoo customer UUID
+ * @return   array|WP_Error            Customer data or error
  */
-function woo_odoo_integration_api_get_customer( $customer_id );
+function woo_odoo_integration_api_get_customer( $customer_uuid );
+
+/**
+ * Update customer in Odoo
+ *
+ * Updates existing customer information using the API endpoint:
+ * PUT /api/customers/{customer_uuid}
+ *
+ * @param    string   $customer_uuid    Odoo customer UUID
+ * @param    array    $customer_data    Updated customer data
+ * @return   array|WP_Error            Updated customer data or error
+ */
+function woo_odoo_integration_api_update_customer( $customer_uuid, $customer_data );
+
+/**
+ * Sync WooCommerce customer to Odoo
+ *
+ * Creates or updates customer in Odoo based on WooCommerce customer data.
+ * Automatically handles create vs. update logic.
+ *
+ * @param    int      $wc_customer_id   WooCommerce customer ID
+ * @param    bool     $force_update     Force update even if already synced
+ * @return   array|WP_Error            Odoo customer data or error
+ */
+function woo_odoo_integration_api_sync_customer( $wc_customer_id, $force_update = false );
 ```
 
 #### Order Management
@@ -644,5 +675,87 @@ $product_data = apply_filters( 'woo_odoo_integration_product_data', $product_dat
 - [Odoo API Documentation](https://www.odoo.com/documentation/16.0/developer/reference/backend/http.html)
 
 ---
+
+---
+
+## Customer Update API Details
+
+### Update Customer Request Format
+
+The customer update API uses a PUT request to the endpoint `/api/customers/{customer_uuid}` with the following data structure:
+
+```json
+{
+	"name": "Customer Test",
+	"street": "Jl. Melati",
+	"street2": "Block B",
+	"city": "Kediri",
+	"zip": 64133,
+	"vat": 112233,
+	"phone": "089111222333",
+	"mobile": "089111222333",
+	"email": "test@email.com",
+	"state_id": "ac9c6b82-14c1-461d-91bd-d024b9b93e6e",
+	"country_id": "1cd0040e-4217-422a-b64e-a7af2aa6f7b0"
+}
+```
+
+### Customer Update Response Format
+
+The Odoo API returns the following response structure for customer updates:
+
+```json
+{
+	"code": 200,
+	"data": [
+		{
+			"uuid": "3a293ab2-6593-4b83-9f9a-1d1009e1d2c2",
+			"name": "CUSTOMER TEST",
+			"address": "Jl. Melati Block B Kediri JI 64133 Indonesia",
+			"street": "Jl. Melati",
+			"street2": "Block B",
+			"city": "Kediri",
+			"zip": "64133",
+			"vat": "112233",
+			"phone": "089111222333",
+			"mobile": "089111222333",
+			"email": "test@email.com",
+			"state_id": {
+				"uuid": "ac9c6b82-14c1-461d-91bd-d024b9b93e6e",
+				"name": "Jawa Timur (ID)"
+			},
+			"country_id": {
+				"uuid": "1cd0040e-4217-422a-b64e-a7af2aa6f7b0",
+				"name": "Indonesia"
+			}
+		}
+	]
+}
+```
+
+### WordPress Integration
+
+The plugin automatically handles customer updates in the following scenarios:
+
+1. **Profile Update**: When customer updates their WordPress user profile
+2. **WooCommerce Customer Save**: When customer updates their WooCommerce profile
+3. **Manual Admin Sync**: When admin manually triggers update from user profile
+4. **Bulk Admin Sync**: When admin uses bulk sync on Users admin page
+
+### Customer Data Mapping
+
+| WordPress/WooCommerce Field | Odoo API Field | Data Type      | Notes                  |
+| --------------------------- | -------------- | -------------- | ---------------------- |
+| First + Last Name           | `name`         | string         | Combined full name     |
+| User Email                  | `email`        | string         | Customer email address |
+| Billing Address 1           | `street`       | string         | Primary address        |
+| Billing Address 2           | `street2`      | string         | Secondary address      |
+| Billing City                | `city`         | string         | City name              |
+| Billing Postcode            | `zip`          | integer/string | Postal code            |
+| Billing Phone               | `phone`        | string         | Primary phone          |
+| Billing Phone               | `mobile`       | string         | Mobile (same as phone) |
+| Billing State               | `state_id`     | string         | State/Province UUID    |
+| Billing Country             | `country_id`   | string         | Country UUID           |
+| -                           | `vat`          | integer/string | VAT number (optional)  |
 
 _This documentation should be updated whenever new API functions are added or existing ones are modified. All developers working on API functionality must follow these guidelines to ensure consistency and maintainability._

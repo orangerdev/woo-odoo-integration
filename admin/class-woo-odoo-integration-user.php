@@ -116,6 +116,91 @@ class User
     }
 
     /**
+     * Handle customer checkout completion and sync
+     *
+     * This function is triggered after WooCommerce order is processed during checkout.
+     * It automatically syncs the customer to Odoo ERP system if not already synced.
+     *
+     * @since    1.0.0
+     * @access   public
+     *
+     * @hooks    Triggered by:
+     *           - woocommerce_checkout_order_processed (after checkout completion)
+     *
+     * @param    int      $order_id    WooCommerce order ID
+     *
+     * @return   void
+     */
+    public function sync_customer_to_odoo_after_checkout($order_id)
+    {
+        if (empty($order_id)) {
+            return;
+        }
+
+        // Get order
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            return;
+        }
+
+        // Get customer ID
+        $customer_id = $order->get_customer_id();
+        if (empty($customer_id)) {
+            return; // Guest checkout
+        }
+
+        // Check if customer already synced to avoid duplicates
+        $odoo_customer_uuid = get_user_meta($customer_id, '_odoo_customer_uuid', true);
+        if (!empty($odoo_customer_uuid)) {
+            return; // Already synced
+        }
+
+        // Schedule sync with slight delay to ensure order data is complete
+        wp_schedule_single_event(time() + 60, 'woo_odoo_integration_sync_customer', array($customer_id));
+    }
+
+    /**
+     * Handle customer profile updates and sync to Odoo
+     *
+     * This function is triggered when customer profile is updated in WooCommerce.
+     * It automatically updates the customer in Odoo if already synced.
+     *
+     * @since    1.0.0
+     * @access   public
+     *
+     * @hooks    Triggered by:
+     *           - profile_update (WordPress user profile update)
+     *           - woocommerce_customer_save (WooCommerce customer save)
+     *
+     * @param    int      $customer_id    WooCommerce customer ID
+     * @param    array    $old_user_data  Previous user data (optional)
+     *
+     * @return   void
+     */
+    public function sync_customer_to_odoo_after_update($customer_id, $old_user_data = null)
+    {
+        // Validate customer ID
+        if (empty($customer_id) || !is_numeric($customer_id)) {
+            return;
+        }
+
+        // Check if Odoo integration is enabled
+        $is_enabled = carbon_get_theme_option('enable_customer_sync');
+        if (empty($is_enabled)) {
+            return;
+        }
+
+        // Only sync if customer is already synced to Odoo
+        $odoo_customer_uuid = get_user_meta($customer_id, '_odoo_customer_uuid', true);
+        if (empty($odoo_customer_uuid)) {
+            return; // Not synced yet, skip update
+        }
+
+        // Schedule update sync
+        wp_schedule_single_event(time() + 30, 'woo_odoo_integration_update_customer', array($customer_id));
+    }
+
+    /**
      * Sync customer to Odoo (scheduled action)
      *
      * This function performs the actual API call to sync customer data to Odoo.
@@ -143,7 +228,7 @@ class User
         }
 
         try {
-            // Perform customer sync
+            // Perform customer sync (create new customer)
             $result = woo_odoo_integration_api_sync_customer($customer_id);
 
             if (is_wp_error($result)) {
@@ -172,6 +257,69 @@ class User
         } catch (\Exception $e) {
             error_log(sprintf(
                 'WooOdoo Integration: Exception during customer sync %d: %s',
+                $customer_id,
+                $e->getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Update customer in Odoo (scheduled action)
+     *
+     * This function performs the actual API call to update customer data in Odoo.
+     * It's called via WordPress cron to avoid blocking user operations.
+     *
+     * @since    1.0.0
+     * @access   public
+     *
+     * @param    int    $customer_id    WooCommerce customer ID to update
+     *
+     * @return   void
+     */
+    public function update_customer_in_odoo($customer_id)
+    {
+        // Validate customer ID
+        if (empty($customer_id) || !is_numeric($customer_id)) {
+            error_log('WooOdoo Integration: Invalid customer ID for scheduled update');
+            return;
+        }
+
+        // Check if WooCommerce is active
+        if (!class_exists('WC_Customer')) {
+            error_log('WooOdoo Integration: WooCommerce not active, cannot update customer');
+            return;
+        }
+
+        try {
+            // Perform customer update (force update existing customer)
+            $result = woo_odoo_integration_api_sync_customer($customer_id, true);
+
+            if (is_wp_error($result)) {
+                // Log error for admin review
+                error_log(sprintf(
+                    'WooOdoo Integration: Failed to update customer %d in Odoo. Error: %s',
+                    $customer_id,
+                    $result->get_error_message()
+                ));
+
+                // Store update failure for retry
+                update_user_meta($customer_id, '_odoo_sync_failed', current_time('timestamp'));
+                update_user_meta($customer_id, '_odoo_sync_error', $result->get_error_message());
+            } else {
+                // Log success
+                error_log(sprintf(
+                    'WooOdoo Integration: Successfully updated customer %d in Odoo. UUID: %s',
+                    $customer_id,
+                    isset($result['uuid']) ? $result['uuid'] : 'unknown'
+                ));
+
+                // Clear any previous failure markers
+                delete_user_meta($customer_id, '_odoo_sync_failed');
+                delete_user_meta($customer_id, '_odoo_sync_error');
+            }
+        } catch (\Exception $e) {
+            error_log(sprintf(
+                'WooOdoo Integration: Exception during customer update %d: %s',
                 $customer_id,
                 $e->getMessage()
             ));
@@ -231,7 +379,7 @@ class User
      * @since    1.0.0
      * @access   public
      *
-     * @param    WP_User    $user    WordPress user object
+     * @param    \WP_User    $user    WordPress user object
      *
      * @return   void
      */
