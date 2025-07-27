@@ -141,8 +141,9 @@ class Product
 
         $logger = wc_get_logger();
         $logger->info(sprintf(
-            'Starting bulk product stock sync for %d products',
-            count($post_ids)
+            'Starting bulk product stock sync for %d products - Endpoint: api/product-stock | Product IDs: %s',
+            count($post_ids),
+            json_encode($post_ids)
         ), array('source' => 'woo-odoo-product-sync'));
 
         // Fire before bulk sync hook
@@ -153,17 +154,44 @@ class Product
             require_once plugin_dir_path(dirname(__FILE__)) . 'helper/api.php';
         }
 
+        // Log API call details
+        $request_data = array('product_ids' => $post_ids);
+        $logger->info(sprintf(
+            'Making API call for bulk product sync - Endpoint: api/product-stock | Request Data: %s',
+            json_encode($request_data)
+        ), array('source' => 'woo-odoo-product-sync'));
+
         // Perform the sync
         $sync_results = woo_odoo_integration_sync_product_stock($post_ids);
 
         if (is_wp_error($sync_results)) {
-            $logger->error('Bulk sync failed: ' . $sync_results->get_error_message(), array('source' => 'woo-odoo-product-sync'));
+            $logger->error(sprintf(
+                'Bulk sync failed - Endpoint: api/product-stock | Request Data: %s | Error: %s | Response: %s',
+                json_encode($request_data),
+                $sync_results->get_error_message(),
+                json_encode(array(
+                    'error_code' => $sync_results->get_error_code(),
+                    'error_message' => $sync_results->get_error_message(),
+                    'error_data' => $sync_results->get_error_data()
+                ))
+            ), array('source' => 'woo-odoo-product-sync'));
 
             return add_query_arg(array(
                 'woo_odoo_sync_error' => 'sync_failed',
                 'error_message' => urlencode($sync_results->get_error_message())
             ), $redirect_to);
         }
+
+        // Log successful sync
+        $logger->info(sprintf(
+            'Bulk product stock sync completed successfully - Endpoint: api/product-stock | Request Data: %s | Response: %s',
+            json_encode($request_data),
+            json_encode(array(
+                'updated' => $sync_results['updated'],
+                'skipped' => $sync_results['skipped'],
+                'errors' => $sync_results['errors']
+            ))
+        ), array('source' => 'woo-odoo-product-sync'));
 
         // Fire after bulk sync hook
         do_action('woo_odoo_integration_bulk_sync_completed', $sync_results);

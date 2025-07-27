@@ -246,14 +246,27 @@ class User
         ), array('source' => 'woo-odoo-customer-sync'));
 
         try {
+            // Log the API call details before making the request
+            $logger->info(sprintf(
+                'Making API call to create guest customer for order %d - Endpoint: api/customers | Request Data: %s',
+                $order->get_id(),
+                json_encode(woo_odoo_integration_mask_sensitive_data($guest_data))
+            ), array('source' => 'woo-odoo-customer-sync'));
+
             // Create guest customer in Odoo
             $result = woo_odoo_integration_api_create_guest_customer($guest_data);
 
             if (is_wp_error($result)) {
                 $logger->error(sprintf(
-                    'Failed to sync guest customer for order %d. Error: %s',
+                    'Failed to sync guest customer for order %d. Error: %s | Endpoint: api/customers | Request Data: %s | Response: %s',
                     $order->get_id(),
-                    $result->get_error_message()
+                    $result->get_error_message(),
+                    json_encode(woo_odoo_integration_mask_sensitive_data($guest_data)),
+                    json_encode(array(
+                        'error_code' => $result->get_error_code(),
+                        'error_message' => $result->get_error_message(),
+                        'error_data' => $result->get_error_data()
+                    ))
                 ), array('source' => 'woo-odoo-customer-sync'));
 
                 // Store failure in order meta
@@ -262,9 +275,11 @@ class User
                 $order->save();
             } else {
                 $logger->info(sprintf(
-                    'Successfully synced guest customer for order %d. UUID: %s',
+                    'Successfully synced guest customer for order %d. Customer UUID: %s | Endpoint: api/customers | Request Data: %s | Response: %s',
                     $order->get_id(),
-                    isset($result['uuid']) ? $result['uuid'] : 'unknown'
+                    isset($result['uuid']) ? $result['uuid'] : 'unknown',
+                    json_encode(woo_odoo_integration_mask_sensitive_data($guest_data)),
+                    json_encode(woo_odoo_integration_mask_sensitive_data($result))
                 ), array('source' => 'woo-odoo-customer-sync'));
 
                 // Store success in order meta
@@ -274,9 +289,10 @@ class User
             }
         } catch (\Exception $e) {
             $logger->error(sprintf(
-                'Exception during guest customer sync for order %d: %s',
+                'Exception during guest customer sync for order %d. Exception: %s | Endpoint: api/customers | Request Data: %s',
                 $order->get_id(),
-                $e->getMessage()
+                $e->getMessage(),
+                json_encode(woo_odoo_integration_mask_sensitive_data($guest_data))
             ), array('source' => 'woo-odoo-customer-sync'));
         }
 
@@ -332,14 +348,34 @@ class User
         try {
             // Perform customer sync (create new customer)
             $logger->info(sprintf('Calling woo_odoo_integration_api_sync_customer for customer %d', $customer_id), array('source' => 'woo-odoo-customer-sync'));
+
+            // Get customer data for logging
+            $customer_data = array(
+                'customer_id' => $customer_id,
+                'email' => $user->user_email,
+                'display_name' => $user->display_name
+            );
+
+            $logger->info(sprintf(
+                'Making API call to sync customer %d - Endpoint: api/customers | Request Data: %s',
+                $customer_id,
+                json_encode(woo_odoo_integration_mask_sensitive_data($customer_data))
+            ), array('source' => 'woo-odoo-customer-sync'));
+
             $result = woo_odoo_integration_api_sync_customer($customer_id);
 
             if (is_wp_error($result)) {
                 // Log error for admin review
                 $logger->error(sprintf(
-                    'Failed to sync customer %d to Odoo. Error: %s',
+                    'Failed to sync customer %d to Odoo. Error: %s | Endpoint: api/customers | Request Data: %s | Response: %s',
                     $customer_id,
-                    $result->get_error_message()
+                    $result->get_error_message(),
+                    json_encode(woo_odoo_integration_mask_sensitive_data($customer_data)),
+                    json_encode(array(
+                        'error_code' => $result->get_error_code(),
+                        'error_message' => $result->get_error_message(),
+                        'error_data' => $result->get_error_data()
+                    ))
                 ), array('source' => 'woo-odoo-customer-sync'));
 
                 // Store sync failure for retry
@@ -348,9 +384,11 @@ class User
             } else {
                 // Log success
                 $logger->info(sprintf(
-                    'Successfully synced customer %d to Odoo. UUID: %s',
+                    'Successfully synced customer %d to Odoo. UUID: %s | Endpoint: api/customers | Request Data: %s | Response: %s',
                     $customer_id,
-                    isset($result['uuid']) ? $result['uuid'] : 'unknown'
+                    isset($result['uuid']) ? $result['uuid'] : 'unknown',
+                    json_encode(woo_odoo_integration_mask_sensitive_data($customer_data)),
+                    json_encode(woo_odoo_integration_mask_sensitive_data($result))
                 ), array('source' => 'woo-odoo-customer-sync'));
 
                 // Clear any previous failure markers

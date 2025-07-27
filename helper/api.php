@@ -20,6 +20,152 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Enhanced logging function for Odoo API interactions
+ *
+ * Logs complete API interaction including endpoint, request data, and response data.
+ * All sensitive data like client secrets and access tokens are masked for security.
+ * Can be enabled/disabled via admin settings.
+ *
+ * @since    1.0.0
+ * @access   private
+ *
+ * @param    string       $endpoint      API endpoint that was called
+ * @param    array        $request_data  Request data sent to API (body, query params, etc.)
+ * @param    mixed        $response      Response data received from API
+ * @param    string       $log_level     Log level (info, warning, error, debug) default: 'info'
+ * @param    string       $method        HTTP method used (GET, POST, PUT, DELETE)
+ * @param    int          $status_code   HTTP status code received
+ *
+ * @return   void
+ */
+function woo_odoo_integration_log_api_interaction($endpoint, $request_data = array(), $response = null, $log_level = 'info', $method = 'GET', $status_code = null)
+{
+    // Check if debug logging is enabled (only do detailed logging if enabled)
+    $debug_logging_enabled = carbon_get_theme_option('enable_debug_logging');
+
+    // Always log errors regardless of debug setting
+    if ($log_level !== 'error' && !$debug_logging_enabled) {
+        return;
+    }
+
+    $logger = wc_get_logger();
+
+    // Prepare log data structure
+    $log_data = array(
+        'timestamp' => current_time('mysql'),
+        'endpoint' => $endpoint,
+        'method' => strtoupper($method),
+        'status_code' => $status_code,
+    );
+
+    // Add request and response data only if debug logging is enabled or it's an error
+    if ($debug_logging_enabled || $log_level === 'error') {
+        $log_data['request_data'] = woo_odoo_integration_mask_sensitive_data($request_data);
+        $log_data['response_data'] = is_wp_error($response) ?
+            array(
+                'error_code' => $response->get_error_code(),
+                'error_message' => $response->get_error_message(),
+                'error_data' => $response->get_error_data()
+            ) :
+            woo_odoo_integration_mask_sensitive_data($response);
+    }
+
+    // Create readable log message
+    if ($debug_logging_enabled || $log_level === 'error') {
+        $log_message = sprintf(
+            'Odoo API Call: %s %s | Status: %s | Request Data: %s | Response: %s',
+            $method,
+            $endpoint,
+            $status_code ? $status_code : 'N/A',
+            json_encode($log_data['request_data'] ?? array()),
+            json_encode($log_data['response_data'] ?? array())
+        );
+    } else {
+        // Simple logging for non-debug mode
+        $log_message = sprintf(
+            'Odoo API Call: %s %s | Status: %s',
+            $method,
+            $endpoint,
+            $status_code ? $status_code : 'N/A'
+        );
+    }
+
+    // Log based on level
+    switch ($log_level) {
+        case 'error':
+            $logger->error($log_message, array('source' => 'woo-odoo-api'));
+            break;
+        case 'warning':
+            $logger->warning($log_message, array('source' => 'woo-odoo-api'));
+            break;
+        case 'debug':
+            $logger->debug($log_message, array('source' => 'woo-odoo-api'));
+            break;
+        case 'info':
+        default:
+            $logger->info($log_message, array('source' => 'woo-odoo-api'));
+            break;
+    }
+}
+
+/**
+ * Mask sensitive data in API logs
+ *
+ * Replaces sensitive information like tokens, passwords, and secrets
+ * with masked values for security purposes in logs.
+ *
+ * @since    1.0.0
+ * @access   private
+ *
+ * @param    mixed    $data    Data to mask (array, string, or other)
+ *
+ * @return   mixed             Data with sensitive values masked
+ */
+function woo_odoo_integration_mask_sensitive_data($data)
+{
+    if (is_array($data)) {
+        $masked_data = array();
+        foreach ($data as $key => $value) {
+            // List of sensitive field names to mask
+            $sensitive_fields = array(
+                'client_secret',
+                'access_token',
+                'password',
+                'token',
+                'secret',
+                'key',
+                'authorization',
+                'auth'
+            );
+
+            // Check if key contains sensitive information
+            $is_sensitive = false;
+            foreach ($sensitive_fields as $sensitive_field) {
+                if (stripos($key, $sensitive_field) !== false) {
+                    $is_sensitive = true;
+                    break;
+                }
+            }
+
+            if ($is_sensitive && is_string($value) && !empty($value)) {
+                // Mask the value but keep first and last 3 characters if long enough
+                if (strlen($value) > 10) {
+                    $masked_data[$key] = substr($value, 0, 3) . '***' . substr($value, -3);
+                } else {
+                    $masked_data[$key] = '***masked***';
+                }
+            } else {
+                // Recursively mask nested arrays
+                $masked_data[$key] = is_array($value) ? woo_odoo_integration_mask_sensitive_data($value) : $value;
+            }
+        }
+        return $masked_data;
+    }
+
+    return $data;
+}
+
+/**
  * Get access token for Odoo API authentication
  *
  * Retrieves access token from WordPress transient storage. If token doesn't exist
@@ -140,16 +286,36 @@ function woo_odoo_integration_api_authenticate($api_base_url, $client_id, $clien
         ),
     );
 
+    // Log the authentication request (sensitive data will be masked)
+    woo_odoo_integration_log_api_interaction(
+        'api/authentication/oauth2/token',
+        $auth_data,
+        null,
+        'info',
+        'POST'
+    );
+
     // Make authentication request
     $response = wp_safe_remote_post($auth_endpoint, $args);
 
     // Check for HTTP errors
     if (is_wp_error($response)) {
-        return new WP_Error(
+        $error = new WP_Error(
             'auth_request_failed',
             sprintf(__('Authentication request failed: %s', 'woo-odoo-integration'), $response->get_error_message()),
             array('status' => 500)
         );
+
+        // Log authentication failure
+        woo_odoo_integration_log_api_interaction(
+            'api/authentication/oauth2/token',
+            $auth_data,
+            $error,
+            'error',
+            'POST'
+        );
+
+        return $error;
     }
 
     $status_code = wp_remote_retrieve_response_code($response);
@@ -157,40 +323,88 @@ function woo_odoo_integration_api_authenticate($api_base_url, $client_id, $clien
 
     // Handle non-200 responses
     if (200 !== $status_code) {
-        return new WP_Error(
+        $error = new WP_Error(
             'auth_failed',
             sprintf(__('Authentication failed with status %d: %s', 'woo-odoo-integration'), $status_code, $body),
             array('status' => $status_code)
         );
+
+        // Log authentication failure with status code
+        woo_odoo_integration_log_api_interaction(
+            'api/authentication/oauth2/token',
+            $auth_data,
+            $error,
+            'error',
+            'POST',
+            $status_code
+        );
+
+        return $error;
     }
 
     // Parse response
     $auth_response = json_decode($body, true);
 
     if (json_last_error() !== JSON_ERROR_NONE) {
-        return new WP_Error(
+        $error = new WP_Error(
             'auth_invalid_response',
             __('Invalid JSON response from authentication server', 'woo-odoo-integration'),
             array('status' => 500)
         );
+
+        // Log JSON parsing error
+        woo_odoo_integration_log_api_interaction(
+            'api/authentication/oauth2/token',
+            $auth_data,
+            array('raw_response' => $body, 'json_error' => json_last_error_msg()),
+            'error',
+            'POST',
+            $status_code
+        );
+
+        return $error;
     }
 
     // Validate response contains access token
     if (empty($auth_response['access_token'])) {
-        return new WP_Error(
+        $error = new WP_Error(
             'auth_no_token',
             __('No access token received from authentication server', 'woo-odoo-integration'),
             array('status' => 500)
         );
+
+        // Log missing token error
+        woo_odoo_integration_log_api_interaction(
+            'api/authentication/oauth2/token',
+            $auth_data,
+            $auth_response,
+            'error',
+            'POST',
+            $status_code
+        );
+
+        return $error;
     }
 
     // Return full authentication response for better token management
-    return array(
+    $final_response = array(
         'access_token' => sanitize_text_field($auth_response['access_token']),
         'expires_in' => isset($auth_response['expires_in']) ? intval($auth_response['expires_in']) : 3600,
         'token_type' => isset($auth_response['token_type']) ? sanitize_text_field($auth_response['token_type']) : 'Bearer',
         'scope' => isset($auth_response['scope']) ? sanitize_text_field($auth_response['scope']) : $scope,
     );
+
+    // Log successful authentication
+    woo_odoo_integration_log_api_interaction(
+        'api/authentication/oauth2/token',
+        $auth_data,
+        $final_response,
+        'info',
+        'POST',
+        $status_code
+    );
+
+    return $final_response;
 }
 
 /**
@@ -244,6 +458,19 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
     // Apply filters to request arguments
     $request_args = apply_filters('woo_odoo_integration_api_request_args', $request_args, $endpoint);
 
+    // Extract request data for logging (body, query params, etc.)
+    $request_data = array();
+    if (isset($request_args['body'])) {
+        $request_data['body'] = $request_args['body'];
+    }
+
+    // Parse URL to get query parameters for logging
+    $parsed_url = parse_url($url);
+    if (isset($parsed_url['query'])) {
+        parse_str($parsed_url['query'], $query_params);
+        $request_data['query_params'] = $query_params;
+    }
+
     // Fire before request hook
     do_action('woo_odoo_integration_before_api_request', $endpoint, $request_args);
 
@@ -258,6 +485,15 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
             array('status' => 500, 'endpoint' => $endpoint)
         );
 
+        // Log request failure
+        woo_odoo_integration_log_api_interaction(
+            $endpoint,
+            $request_data,
+            $error,
+            'error',
+            $method
+        );
+
         do_action('woo_odoo_integration_api_request_failed', $endpoint, $error);
         return $error;
     }
@@ -267,6 +503,16 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
 
     // Handle token expiration (401 Unauthorized) with retry
     if (401 === $status_code && $retry) {
+        // Log token expiration attempt
+        woo_odoo_integration_log_api_interaction(
+            $endpoint,
+            $request_data,
+            array('message' => 'Token expired, attempting refresh'),
+            'warning',
+            $method,
+            $status_code
+        );
+
         // Force refresh token and retry once
         $new_token = woo_odoo_integration_api_get_access_token(true);
 
@@ -283,6 +529,20 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
             array('status' => $status_code, 'endpoint' => $endpoint)
         );
 
+        // Log error response
+        woo_odoo_integration_log_api_interaction(
+            $endpoint,
+            $request_data,
+            array(
+                'status_code' => $status_code,
+                'raw_response' => $body,
+                'error' => $error
+            ),
+            'error',
+            $method,
+            $status_code
+        );
+
         do_action('woo_odoo_integration_api_request_failed', $endpoint, $error);
         return $error;
     }
@@ -297,12 +557,36 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
             array('status' => 500, 'endpoint' => $endpoint)
         );
 
+        // Log JSON parsing error
+        woo_odoo_integration_log_api_interaction(
+            $endpoint,
+            $request_data,
+            array(
+                'raw_response' => $body,
+                'json_error' => json_last_error_msg(),
+                'error' => $error
+            ),
+            'error',
+            $method,
+            $status_code
+        );
+
         do_action('woo_odoo_integration_api_request_failed', $endpoint, $error);
         return $error;
     }
 
     // Apply filters to response
     $response_data = apply_filters('woo_odoo_integration_api_response', $response_data, $endpoint);
+
+    // Log successful request
+    woo_odoo_integration_log_api_interaction(
+        $endpoint,
+        $request_data,
+        $response_data,
+        'info',
+        $method,
+        $status_code
+    );
 
     // Fire after request hook
     do_action('woo_odoo_integration_after_api_request', $endpoint, $response_data);

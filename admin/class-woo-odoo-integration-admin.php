@@ -138,6 +138,8 @@ class Admin
                     ->set_help_text(__('Enable automatic order synchronization with Odoo')),
                 Field::make('checkbox', 'enable_stock_sync', __('Enable Stock Sync'))
                     ->set_help_text(__('Enable automatic stock synchronization with Odoo')),
+                Field::make('checkbox', 'enable_debug_logging', __('Enable Debug Logging'))
+                    ->set_help_text(__('Enable detailed API logging for debugging (includes endpoint, request data, and response data)')),
 
             ));
     }
