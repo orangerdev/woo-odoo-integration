@@ -183,6 +183,8 @@ class Woo_Odoo_Integration
         $this->loader->add_action('show_user_profile', $user_handler, 'show_customer_odoo_status');
         $this->loader->add_action('edit_user_profile', $user_handler, 'show_customer_odoo_status');
 
+        $this->loader->add_action('woo_odoo_integration_create_guest_customer_failed', $user_handler, 'handle_guest_customer_creation_failed', 10, 2);
+
         // Product management hooks
         $product_handler = new Woo_Odoo_Integration\Admin\Product($this->get_plugin_name(), $this->get_version());
 

@@ -198,10 +198,221 @@ class User
     }
 
     /**
+     * Check if guest customer email already exists and has been synced to Odoo
+     *
+     * This function checks both registered customers and previous guest orders
+     * to prevent duplicate customer creation in Odoo for the same email address.
+     *
+     * @since    1.0.0
+     * @access   private
+     *
+     * @param    string    $email    Email address to check
+     *
+     * @return   array|false         Customer data if exists and synced, false otherwise
+     */
+    private function check_guest_customer_exists($email)
+    {
+        global $wpdb;
+
+        if (empty($email) || !is_email($email)) {
+            return false;
+        }
+
+        $email = sanitize_email($email);
+
+        // First check if this email belongs to a registered customer
+        $user = get_user_by('email', $email);
+        if ($user) {
+            $odoo_uuid = get_user_meta($user->ID, '_odoo_customer_uuid', true);
+            if (!empty($odoo_uuid)) {
+                return array(
+                    'type' => 'registered',
+                    'customer_id' => $user->ID,
+                    'email' => $user->user_email,
+                    'name' => $user->display_name,
+                    'odoo_uuid' => $odoo_uuid
+                );
+            }
+        }
+
+        // Check in wc_customer_lookup table for guest customers
+        $customer_lookup = $wpdb->get_row($wpdb->prepare(
+            "SELECT customer_id, first_name, last_name, email, date_registered 
+             FROM {$wpdb->prefix}wc_customer_lookup 
+             WHERE email = %s 
+             ORDER BY date_registered DESC 
+             LIMIT 1",
+            $email
+        ));
+
+        if ($customer_lookup && $customer_lookup->user_id == NULL) {
+            // This is a guest customer, check if we have previous orders with Odoo sync
+            $previous_orders = wc_get_orders(array(
+                'billing_email' => $email,
+                'customer_id' => 0, // Guest orders only
+                'limit' => 1,
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'meta_query' => array(
+                    array(
+                        'key' => '_odoo_guest_uuid',
+                        'compare' => 'EXISTS'
+                    )
+                )
+            ));
+
+            if (!empty($previous_orders)) {
+                $previous_order = $previous_orders[0];
+                $odoo_uuid = $previous_order->get_meta('_odoo_guest_uuid');
+
+                if (!empty($odoo_uuid)) {
+                    return array(
+                        'type' => 'guest',
+                        'order_id' => $previous_order->get_id(),
+                        'email' => $email,
+                        'name' => trim($customer_lookup->first_name . ' ' . $customer_lookup->last_name),
+                        'odoo_uuid' => $odoo_uuid,
+                        'date_registered' => $customer_lookup->date_registered
+                    );
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Add Odoo sync information to order notes
+     *
+     * This function adds detailed information about Odoo sync status to order notes
+     * for easy tracking and debugging in WooCommerce admin.
+     *
+     * @since    1.0.0
+     * @access   private
+     *
+     * @param    WC_Order    $order        WooCommerce order object
+     * @param    string      $sync_type    Type of sync ('guest_success', 'guest_failed', 'guest_duplicate', 'registered_success', 'registered_failed')
+     * @param    array       $data         Additional data to include in notes
+     *
+     * @return   void
+     */
+    private function add_odoo_sync_order_note($order, $sync_type, $data = array())
+    {
+        $note_content = '';
+        $timestamp = current_time('Y-m-d H:i:s');
+
+        switch ($sync_type) {
+            case 'guest_success':
+                $note_content = sprintf(
+                    '[Odoo Integration] ✅ Guest customer successfully synced to Odoo at %s
+📧 Email: %s
+👤 Name: %s
+🆔 Odoo UUID: %s
+📝 Customer Type: Guest',
+                    $timestamp,
+                    isset($data['email']) ? $data['email'] : 'N/A',
+                    isset($data['name']) ? $data['name'] : 'N/A',
+                    isset($data['uuid']) ? $data['uuid'] : 'N/A'
+                );
+                break;
+
+            case 'guest_failed':
+                $note_content = sprintf(
+                    '[Odoo Integration] ❌ Guest customer sync failed at %s
+📧 Email: %s
+👤 Name: %s
+❗ Error: %s
+💡 Recommendation: Check Odoo API connection and retry sync',
+                    $timestamp,
+                    isset($data['email']) ? $data['email'] : 'N/A',
+                    isset($data['name']) ? $data['name'] : 'N/A',
+                    isset($data['error']) ? $data['error'] : 'Unknown error'
+                );
+                break;
+
+            case 'guest_duplicate':
+                $existing_info = '';
+                if (isset($data['existing_customer'])) {
+                    $existing = $data['existing_customer'];
+                    $existing_info = sprintf(
+                        '🔗 Existing Customer Type: %s
+🆔 Existing UUID: %s',
+                        ucfirst($existing['type']),
+                        isset($existing['odoo_uuid']) ? $existing['odoo_uuid'] : 'N/A'
+                    );
+
+                    if ($existing['type'] === 'guest' && isset($existing['order_id'])) {
+                        $existing_info .= sprintf(
+                            '
+📦 Reference Order ID: %s',
+                            $existing['order_id']
+                        );
+                    }
+                }
+
+                $note_content = sprintf(
+                    '[Odoo Integration] 🔄 Guest customer sync skipped (duplicate) at %s
+📧 Email: %s
+👤 Name: %s
+💭 Reason: Customer with this email already exists and synced to Odoo
+%s',
+                    $timestamp,
+                    isset($data['email']) ? $data['email'] : 'N/A',
+                    isset($data['name']) ? $data['name'] : 'N/A',
+                    $existing_info
+                );
+                break;
+
+            case 'registered_success':
+                $note_content = sprintf(
+                    '[Odoo Integration] ✅ Registered customer successfully synced to Odoo at %s
+👤 Customer ID: %s
+📧 Email: %s
+🆔 Odoo UUID: %s
+📝 Customer Type: Registered',
+                    $timestamp,
+                    isset($data['customer_id']) ? $data['customer_id'] : 'N/A',
+                    isset($data['email']) ? $data['email'] : 'N/A',
+                    isset($data['uuid']) ? $data['uuid'] : 'N/A'
+                );
+                break;
+
+            case 'registered_failed':
+                $note_content = sprintf(
+                    '[Odoo Integration] ❌ Registered customer sync failed at %s
+👤 Customer ID: %s
+📧 Email: %s
+❗ Error: %s
+💡 Recommendation: Check customer data and Odoo API connection',
+                    $timestamp,
+                    isset($data['customer_id']) ? $data['customer_id'] : 'N/A',
+                    isset($data['email']) ? $data['email'] : 'N/A',
+                    isset($data['error']) ? $data['error'] : 'Unknown error'
+                );
+                break;
+
+            default:
+                $note_content = sprintf(
+                    '[Odoo Integration] ℹ️ Sync event logged at %s
+Type: %s
+Data: %s',
+                    $timestamp,
+                    $sync_type,
+                    json_encode($data)
+                );
+                break;
+        }
+
+        // Add the note to order
+        $order->add_order_note($note_content, false, true);
+    }
+
+    /**
      * Sync guest customer to Odoo using order data
      *
      * This function handles guest checkout by creating customer in Odoo
-     * using the order billing information.
+     * using the order billing information. It includes duplicate prevention
+     * based on email address using WooCommerce customer lookup data.
      *
      * @since    1.0.0
      * @access   public
@@ -221,10 +432,54 @@ class User
             return;
         }
 
-        // Extract guest customer data from order
+        // Get guest email and check for existing customer
+        $guest_email = $order->get_billing_email();
+        $guest_name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
+
+        $logger->info(sprintf(
+            'Checking for existing customer with email: %s for order %d',
+            $guest_email,
+            $order->get_id()
+        ), array('source' => 'woo-odoo-customer-sync'));
+
+        // Check if customer already exists and has been synced
+        $existing_customer = $this->check_guest_customer_exists($guest_email);
+
+        if ($existing_customer !== false) {
+            $logger->info(sprintf(
+                'Customer with email %s already exists (type: %s, UUID: %s) - skipping creation for order %d',
+                $guest_email,
+                $existing_customer['type'],
+                isset($existing_customer['odoo_uuid']) ? $existing_customer['odoo_uuid'] : 'none',
+                $order->get_id()
+            ), array('source' => 'woo-odoo-customer-sync'));
+
+            // Store reference to existing customer in order meta
+            $order->add_meta_data('_odoo_guest_duplicate_skipped', current_time('timestamp'));
+            $order->add_meta_data('_odoo_existing_customer_type', $existing_customer['type']);
+            $order->add_meta_data('_odoo_existing_customer_uuid', $existing_customer['odoo_uuid']);
+
+            if ($existing_customer['type'] === 'guest' && isset($existing_customer['order_id'])) {
+                $order->add_meta_data('_odoo_reference_order_id', $existing_customer['order_id']);
+            }
+
+            // Add order note for duplicate skipped
+            $this->add_odoo_sync_order_note($order, 'guest_duplicate', array(
+                'email' => $guest_email,
+                'name' => $guest_name,
+                'existing_customer' => $existing_customer
+            ));
+
+            $order->save();
+
+            $logger->info(sprintf('Completed guest customer sync for order ID: %d (duplicate skipped)', $order->get_id()), array('source' => 'woo-odoo-customer-sync'));
+            return;
+        }
+
+        // Proceed with creating new guest customer
         $guest_data = array(
-            'name' => trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name()),
-            'email' => $order->get_billing_email(),
+            'name' => $guest_name,
+            'email' => $guest_email,
             'phone' => $order->get_billing_phone(),
             'address' => array(
                 'street' => $order->get_billing_address_1(),
@@ -235,7 +490,7 @@ class User
         );
 
         $logger->info(sprintf(
-            'Guest customer data prepared for order %d: %s (%s)',
+            'Guest customer data prepared for order %d: %s (%s) - no existing customer found',
             $order->get_id(),
             $guest_data['name'],
             $guest_data['email']
@@ -268,6 +523,14 @@ class User
                 // Store failure in order meta
                 $order->add_meta_data('_odoo_guest_sync_failed', current_time('timestamp'));
                 $order->add_meta_data('_odoo_guest_sync_error', $result->get_error_message());
+
+                // Add order note for sync failure
+                $this->add_odoo_sync_order_note($order, 'guest_failed', array(
+                    'email' => $guest_email,
+                    'name' => $guest_name,
+                    'error' => $result->get_error_message()
+                ));
+
                 $order->save();
             } else {
                 $logger->info(sprintf(
@@ -281,6 +544,14 @@ class User
                 // Store success in order meta
                 $order->add_meta_data('_odoo_guest_uuid', isset($result['uuid']) ? $result['uuid'] : '');
                 $order->add_meta_data('_odoo_guest_sync_time', current_time('timestamp'));
+
+                // Add order note for successful sync
+                $this->add_odoo_sync_order_note($order, 'guest_success', array(
+                    'email' => $guest_email,
+                    'name' => $guest_name,
+                    'uuid' => isset($result['uuid']) ? $result['uuid'] : 'N/A'
+                ));
+
                 $order->save();
             }
         } catch (\Exception $e) {
@@ -401,6 +672,124 @@ class User
         }
 
         $logger->info(sprintf('Completed sync_customer_to_odoo for customer ID: %d', $customer_id), array('source' => 'woo-odoo-customer-sync'));
+    }
+
+    /**
+     * Display customer Odoo sync status in user profile
+     *
+     * Shows Odoo integration status, sync time, and UUID in WordPress admin
+     * user profile pages for administrators to monitor sync status.
+     *
+     * @since    1.0.0
+     * @access   public
+     *
+     * @param    WP_User    $user    WordPress user object
+     *
+     * @return   void
+     */
+    public function show_customer_odoo_status($user)
+    {
+        // Only show for users with customer capabilities or administrators
+        if (!current_user_can('manage_woocommerce') && !current_user_can('edit_users')) {
+            return;
+        }
+
+        // Get Odoo sync data
+        $odoo_uuid = get_user_meta($user->ID, '_odoo_customer_uuid', true);
+        $sync_failed = get_user_meta($user->ID, '_odoo_sync_failed', true);
+        $sync_error = get_user_meta($user->ID, '_odoo_sync_error', true);
+
+        ?>
+        <h3><?php _e('WooCommerce Odoo Integration', 'woo-odoo-integration'); ?></h3>
+        <table class="form-table" role="presentation">
+            <tr>
+                <th><label><?php _e('Odoo Sync Status', 'woo-odoo-integration'); ?></label></th>
+                <td>
+                    <?php if (!empty($odoo_uuid)): ?>
+                        <span style="color: green;">✓ <?php _e('Synced to Odoo', 'woo-odoo-integration'); ?></span>
+                        <br><strong><?php _e('Odoo UUID:', 'woo-odoo-integration'); ?></strong>
+                        <code><?php echo esc_html($odoo_uuid); ?></code>
+                    <?php elseif (!empty($sync_failed)): ?>
+                        <span style="color: red;">✗ <?php _e('Sync Failed', 'woo-odoo-integration'); ?></span>
+                        <br><strong><?php _e('Error:', 'woo-odoo-integration'); ?></strong>
+                        <?php echo esc_html($sync_error); ?>
+                        <br><strong><?php _e('Failed at:', 'woo-odoo-integration'); ?></strong>
+                        <?php echo date('Y-m-d H:i:s', $sync_failed); ?>
+                    <?php else: ?>
+                        <span style="color: orange;">⚠ <?php _e('Not synced yet', 'woo-odoo-integration'); ?></span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+
+            <?php if (!empty($odoo_uuid)): ?>
+                <tr>
+                    <th><label><?php _e('Guest Orders with Same Email', 'woo-odoo-integration'); ?></label></th>
+                    <td>
+                        <?php
+                        // Check for guest orders with the same email
+                        $guest_orders = wc_get_orders(array(
+                            'billing_email' => $user->user_email,
+                            'customer_id' => 0, // Guest orders only
+                            'limit' => 5,
+                            'orderby' => 'date',
+                            'order' => 'DESC'
+                        ));
+
+                        if (!empty($guest_orders)):
+                            echo '<p>' . sprintf(__('Found %d guest order(s) with this email:', 'woo-odoo-integration'), count($guest_orders)) . '</p>';
+                            echo '<ul>';
+                            foreach ($guest_orders as $guest_order):
+                                $guest_uuid = $guest_order->get_meta('_odoo_guest_uuid');
+                                $duplicate_skipped = $guest_order->get_meta('_odoo_guest_duplicate_skipped');
+                                ?>
+                                <li>
+                                    <strong>Order #<?php echo $guest_order->get_id(); ?></strong>
+                                    (<?php echo $guest_order->get_date_created()->format('Y-m-d H:i'); ?>)
+                                    <?php if (!empty($guest_uuid)): ?>
+                                        - <span style="color: green;">Synced UUID: <?php echo esc_html($guest_uuid); ?></span>
+                                    <?php elseif (!empty($duplicate_skipped)): ?>
+                                        - <span style="color: blue;">Duplicate skipped</span>
+                                    <?php else: ?>
+                                        - <span style="color: orange;">Not synced</span>
+                                    <?php endif; ?>
+                                </li>
+                                <?php
+                            endforeach;
+                            echo '</ul>';
+                        else:
+                            echo '<p>' . __('No guest orders found with this email.', 'woo-odoo-integration') . '</p>';
+                        endif;
+                        ?>
+                    </td>
+                </tr>
+            <?php endif; ?>
+        </table>
+        <?php
+    }
+
+    /**
+     * Handle guest customer creation failure
+     *
+     * This function is triggered when guest customer creation fails during checkout.
+     * It logs the error and can be extended to notify administrators or retry sync.
+     *
+     * @since    1.0.0
+     * @access   public
+     *
+     * @param    WP_Error|array    $response    Error response from Odoo API
+     * @param    array              $guest_data  Guest customer data attempted to sync
+     *
+     * @return   void
+     */
+    public function handle_guest_customer_creation_failed($response, $guest_data)
+    {
+        // Log the error
+        $logger = wc_get_logger();
+        $logger->error(sprintf(
+            'Failed to create guest customer in Odoo. Response: %s | Guest Data: %s',
+            json_encode($response),
+            json_encode($guest_data)
+        ), array('source' => 'woo-odoo-guest-customer-creation'));
     }
 
 }

@@ -934,23 +934,9 @@ function woo_odoo_integration_api_create_guest_customer($guest_data)
         }
 
         if (!empty($address['zip'])) {
-            $odoo_customer_data['zip'] = sanitize_text_field($address['zip']);
-        }
-
-        if (!empty($address['state'])) {
-            $odoo_customer_data['state_id'] = sanitize_text_field($address['state']);
-        }
-
-        if (!empty($address['country'])) {
-            $odoo_customer_data['country_id'] = sanitize_text_field($address['country']);
+            $odoo_customer_data['zip'] = absint(sanitize_text_field($address['zip']));
         }
     }
-
-    // Add meta data to identify this as guest customer
-    $odoo_customer_data['comment'] = sprintf(
-        'Guest customer from WooCommerce order %s',
-        isset($guest_data['order_id']) ? $guest_data['order_id'] : 'unknown'
-    );
 
     // Remove empty fields to avoid API issues
     $odoo_customer_data = array_filter($odoo_customer_data, function ($value) {
@@ -964,7 +950,7 @@ function woo_odoo_integration_api_create_guest_customer($guest_data)
     $response = woo_odoo_integration_api_post('api/customers', $odoo_customer_data);
 
     if (is_wp_error($response)) {
-        do_action('woo_odoo_integration_create_guest_customer_failed', $response, $guest_data);
+        do_action('woo_odoo_integration_create_guest_customer_failed', $response, $odoo_customer_data);
         return $response;
     }
 
