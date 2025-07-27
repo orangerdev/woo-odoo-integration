@@ -173,35 +173,15 @@ class Woo_Odoo_Integration
         // User/Customer management hooks
         $user_handler = new Woo_Odoo_Integration\Admin\User($this->get_plugin_name(), $this->get_version());
 
-        // WooCommerce customer registration and checkout hooks
-        $this->loader->add_action('woocommerce_created_customer', $user_handler, 'sync_customer_to_odoo_after_registration', 10, 1);
+        // Only use checkout order processed hook for customer sync
         $this->loader->add_action('woocommerce_checkout_order_processed', $user_handler, 'sync_customer_to_odoo_after_checkout', 10, 1);
 
-        // WordPress and WooCommerce customer profile update hooks
-        $this->loader->add_action('profile_update', $user_handler, 'sync_customer_to_odoo_after_update', 10, 2);
-        $this->loader->add_action('woocommerce_customer_save', $user_handler, 'sync_customer_to_odoo_after_update', 10, 1);
-
-        // Scheduled action hooks
+        // Scheduled action hooks (keep for admin manual sync)
         $this->loader->add_action('woo_odoo_integration_sync_customer', $user_handler, 'sync_customer_to_odoo');
-        $this->loader->add_action('woo_odoo_integration_update_customer', $user_handler, 'update_customer_in_odoo');
 
         // Admin user profile hooks
         $this->loader->add_action('show_user_profile', $user_handler, 'show_customer_odoo_status');
         $this->loader->add_action('edit_user_profile', $user_handler, 'show_customer_odoo_status');
-
-        // AJAX hooks for manual sync
-        $this->loader->add_action('wp_ajax_woo_odoo_sync_customer', $user_handler, 'handle_manual_customer_sync');
-
-        // Admin script and style hooks
-        $this->loader->add_action('admin_enqueue_scripts', $user_handler, 'enqueue_admin_scripts');
-
-        // Admin notice hooks
-        $this->loader->add_action('admin_notices', $user_handler, 'show_sync_failure_notices');
-        $this->loader->add_action('admin_notices', $user_handler, 'show_bulk_sync_notice');
-
-        // Bulk action hooks for Users admin page
-        $this->loader->add_filter('bulk_actions-users', $user_handler, 'add_bulk_customer_sync_action');
-        $this->loader->add_filter('handle_bulk_actions-users', $user_handler, 'handle_bulk_customer_sync', 10, 3);
 
         // Product management hooks
         $product_handler = new Woo_Odoo_Integration\Admin\Product($this->get_plugin_name(), $this->get_version());

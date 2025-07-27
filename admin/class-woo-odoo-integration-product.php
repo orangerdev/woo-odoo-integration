@@ -72,6 +72,17 @@ class Product
     {
         $this->plugin_name = $plugin_name;
         $this->version = $version;
+
+        add_action('admin_init', function () {
+            // Check if the bulk action is triggered
+            if (isset($_REQUEST['dylan'])) {
+                $token = woo_odoo_integration_api_get_access_token();
+
+                do_action("qm/info", array(
+                    $token,
+                ));
+            }
+        });
     }
 
     /**

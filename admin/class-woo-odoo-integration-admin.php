@@ -130,6 +130,14 @@ class Admin
                 Field::make('text', 'odoo_scope', __('Scope'))
                     ->set_help_text(__('Enter the scope for the Odoo API, e.g., all'))
                     ->set_default_value('all'),
+                Field::make('checkbox', 'enable_customer_sync', __('Enable Customer Sync'))
+                    ->set_help_text(__('Enable automatic customer synchronization with Odoo')),
+                Field::make('checkbox', 'enable_product_sync', __('Enable Product Sync'))
+                    ->set_help_text(__('Enable automatic product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_order_sync', __('Enable Order Sync'))
+                    ->set_help_text(__('Enable automatic order synchronization with Odoo')),
+                Field::make('checkbox', 'enable_stock_sync', __('Enable Stock Sync'))
+                    ->set_help_text(__('Enable automatic stock synchronization with Odoo')),
 
             ));
     }

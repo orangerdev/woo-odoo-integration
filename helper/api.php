@@ -594,6 +594,121 @@ function woo_odoo_integration_api_create_customer($customer_data, $wc_customer_i
 }
 
 /**
+ * Create guest customer in Odoo from order data
+ *
+ * Creates a customer in Odoo ERP system using guest checkout data.
+ * This is specifically for guest customers who don't have WordPress accounts.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @param    array    $guest_data    Guest customer data including name, email, address, etc.
+ *
+ * @return   array|WP_Error         Created customer data on success, WP_Error on failure
+ */
+function woo_odoo_integration_api_create_guest_customer($guest_data)
+{
+    // Fire before create guest customer hook
+    do_action('woo_odoo_integration_before_create_guest_customer', $guest_data);
+
+    // Validate required fields for guest customer
+    $required_fields = array('name', 'email');
+    foreach ($required_fields as $field) {
+        if (empty($guest_data[$field])) {
+            $error = new WP_Error(
+                'missing_required_field',
+                sprintf(__('Required field "%s" is missing for guest customer creation', 'woo-odoo-integration'), $field),
+                array('status' => 400, 'field' => $field)
+            );
+
+            do_action('woo_odoo_integration_create_guest_customer_failed', $error, $guest_data);
+            return $error;
+        }
+    }
+
+    // Prepare guest customer data for Odoo API
+    $odoo_customer_data = array(
+        'name' => sanitize_text_field($guest_data['name']),
+        'email' => sanitize_email($guest_data['email']),
+        'phone' => isset($guest_data['phone']) ? sanitize_text_field($guest_data['phone']) : '',
+        'is_company' => false,
+        'customer_rank' => 1, // Mark as customer
+        'supplier_rank' => 0,  // Not a supplier
+    );
+
+    // Add address data if provided
+    if (isset($guest_data['address']) && is_array($guest_data['address'])) {
+        $address = $guest_data['address'];
+
+        if (!empty($address['street'])) {
+            $odoo_customer_data['street'] = sanitize_text_field($address['street']);
+        }
+
+        if (!empty($address['street2'])) {
+            $odoo_customer_data['street2'] = sanitize_text_field($address['street2']);
+        }
+
+        if (!empty($address['city'])) {
+            $odoo_customer_data['city'] = sanitize_text_field($address['city']);
+        }
+
+        if (!empty($address['zip'])) {
+            $odoo_customer_data['zip'] = sanitize_text_field($address['zip']);
+        }
+
+        if (!empty($address['state'])) {
+            $odoo_customer_data['state_id'] = sanitize_text_field($address['state']);
+        }
+
+        if (!empty($address['country'])) {
+            $odoo_customer_data['country_id'] = sanitize_text_field($address['country']);
+        }
+    }
+
+    // Add meta data to identify this as guest customer
+    $odoo_customer_data['comment'] = sprintf(
+        'Guest customer from WooCommerce order %s',
+        isset($guest_data['order_id']) ? $guest_data['order_id'] : 'unknown'
+    );
+
+    // Remove empty fields to avoid API issues
+    $odoo_customer_data = array_filter($odoo_customer_data, function ($value) {
+        return !empty($value);
+    });
+
+    // Apply filters to guest customer data before sending
+    $odoo_customer_data = apply_filters('woo_odoo_integration_guest_customer_data', $odoo_customer_data, $guest_data);
+
+    // Make API request to create guest customer
+    $response = woo_odoo_integration_api_post('api/customers', $odoo_customer_data);
+
+    if (is_wp_error($response)) {
+        do_action('woo_odoo_integration_create_guest_customer_failed', $response, $guest_data);
+        return $response;
+    }
+
+    // Parse Odoo response
+    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
+        $error = new WP_Error(
+            'odoo_create_guest_customer_failed',
+            __('Odoo API returned unexpected response format for guest customer', 'woo-odoo-integration'),
+            array('status' => 500, 'response' => $response)
+        );
+
+        do_action('woo_odoo_integration_create_guest_customer_failed', $error, $guest_data);
+        return $error;
+    }
+
+    // Get created guest customer data
+    $created_customer = $response['data'][0];
+
+    // Fire after create guest customer hook
+    do_action('woo_odoo_integration_after_create_guest_customer', $created_customer, $guest_data);
+
+    return $created_customer;
+}
+
+/**
  * Get customer from Odoo by UUID
  *
  * Retrieves customer information from Odoo using customer UUID.
