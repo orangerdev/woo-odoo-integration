@@ -915,9 +915,6 @@ function woo_odoo_integration_api_create_guest_customer($guest_data)
         'name' => sanitize_text_field($guest_data['name']),
         'email' => sanitize_email($guest_data['email']),
         'phone' => isset($guest_data['phone']) ? sanitize_text_field($guest_data['phone']) : '',
-        'is_company' => false,
-        'customer_rank' => 1, // Mark as customer
-        'supplier_rank' => 0,  // Not a supplier
     );
 
     // Add address data if provided

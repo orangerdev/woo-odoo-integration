@@ -230,12 +230,8 @@ class User
                 'street' => $order->get_billing_address_1(),
                 'street2' => $order->get_billing_address_2(),
                 'city' => $order->get_billing_city(),
-                'state' => $order->get_billing_state(),
-                'zip' => $order->get_billing_postcode(),
-                'country' => $order->get_billing_country()
+                'zip' => absint($order->get_billing_postcode()),
             ),
-            'order_id' => $order->get_id(),
-            'is_guest' => true
         );
 
         $logger->info(sprintf(
