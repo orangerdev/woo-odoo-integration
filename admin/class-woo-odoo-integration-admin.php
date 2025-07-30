@@ -114,6 +114,7 @@ class Admin
      */
     public function crb_register_fields()
     {
+
         Container::make('theme_options', __('Odoo Settings'))
             ->set_page_menu_position(60)
             ->set_page_menu_title(__('Odoo Settings'))
@@ -141,6 +142,13 @@ class Admin
                 Field::make('checkbox', 'enable_debug_logging', __('Enable Debug Logging'))
                     ->set_help_text(__('Enable detailed API logging for debugging (includes endpoint, request data, and response data)')),
 
+            ));
+
+        Container::make('term_meta', __("Location Configuration", 'woo-odoo-integration'))
+            ->where('term_taxonomy', '=', 'pa_location')
+            ->add_fields(array(
+                Field::make('text', 'odoo_warehouse_id', __('Warehouse ID'))
+                    ->set_help_text(__('Enter the Odoo Warehouse ID for this category')),
             ));
     }
 

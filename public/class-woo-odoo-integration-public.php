@@ -58,52 +58,46 @@ class Front
 
     }
 
-    /**
-     * Register the stylesheets for the public-facing side of the site.
-     *
-     * @since    1.0.0
-     */
-    public function enqueue_styles()
+    public function validate_add_to_cart($passed, $product_id, $quantity)
     {
+        // Get cart items
+        $cart_items = WC()->cart->get_cart();
 
-        /**
-         * This function is provided for demonstration purposes only.
-         *
-         * An instance of this class should be passed to the run() function
-         * defined in Woo_Odoo_Integration_Loader as all of the hooks are defined
-         * in that particular class.
-         *
-         * The Woo_Odoo_Integration_Loader will then create the relationship
-         * between the defined hooks and the functions defined in this
-         * class.
-         */
+        // Current product location attribute value
+        $product = wc_get_product($product_id);
+        $location = $product->get_attribute('pa_location');
 
-        wp_enqueue_style($this->plugin_name, plugin_dir_url(__FILE__) . 'css/woo-odoo-integration-public.css', array(), $this->version, 'all');
+        do_action("qm/debug", [
+            "location" => $location,
+            "product" => $product,
+        ]);
 
-    }
+        $cart_items = WC()->cart->get_cart();
 
-    /**
-     * Register the JavaScript for the public-facing side of the site.
-     *
-     * @since    1.0.0
-     */
-    public function enqueue_scripts()
-    {
+        if (empty($cart_items))
+            return $passed;
 
-        /**
-         * This function is provided for demonstration purposes only.
-         *
-         * An instance of this class should be passed to the run() function
-         * defined in Woo_Odoo_Integration_Loader as all of the hooks are defined
-         * in that particular class.
-         *
-         * The Woo_Odoo_Integration_Loader will then create the relationship
-         * between the defined hooks and the functions defined in this
-         * class.
-         */
+        // Check if the product's location matches any item in the cart
+        foreach ($cart_items as $cart_item) {
+            $cart_product = wc_get_product($cart_item['product_id']);
+            $cart_location = $cart_product->get_attribute('pa_location');
 
-        wp_enqueue_script($this->plugin_name, plugin_dir_url(__FILE__) . 'js/woo-odoo-integration-public.js', array('jquery'), $this->version, false);
+            do_action("qm/debug", [
+                "cart_location" => $cart_location,
+            ]);
+            if ($cart_location === $location) {
+                // If a match is found, allow adding to cart
+                return $passed;
+            } else {
+                // If no match is found, prevent adding to cart
+                wc_add_notice(__('You can only add products from the same location to the cart.', 'woo-odoo-integration'), 'error');
+                return false;
+            }
 
+        }
+
+        // Custom validation logic for adding products to the cart
+        return $passed;
     }
 
 }

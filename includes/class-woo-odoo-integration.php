@@ -231,8 +231,7 @@ class Woo_Odoo_Integration
 
         $public = new Woo_Odoo_Integration\Front($this->get_plugin_name(), $this->get_version());
 
-        $this->loader->add_action('wp_enqueue_scripts', $public, 'enqueue_styles');
-        $this->loader->add_action('wp_enqueue_scripts', $public, 'enqueue_scripts');
+        $this->loader->add_action('woocommerce_add_to_cart_validation', $public, 'validate_add_to_cart', 10, 3);
 
     }
 
