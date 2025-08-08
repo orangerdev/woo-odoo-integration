@@ -1,0 +1,31 @@
+parameters:
+    level: 0
+    paths:
+        - admin
+        - includes
+        - public
+        - helper
+    
+    # WordPress specific ignores
+    ignoreErrors:
+        - '#Call to an undefined function (add_action|remove_action|do_action|apply_filters|add_filter|remove_filter)#'
+        - '#Call to an undefined function (__|\w*_e|esc_html__|esc_attr__|esc_html_e|esc_attr_e|esc_html|esc_attr|esc_url|esc_js)#'
+        - '#Call to an undefined function (wp_\w+|get_\w+|is_\w+|current_\w+|update_\w+|delete_\w+)#'
+        - '#Call to an undefined function (wc_\w+|WC\w*)#'
+        - '#Call to an undefined function (carbon_\w+)#'
+        - '#Call to an undefined function (plugin_\w+|admin_\w+)#'
+        - '#Call to an undefined function (sanitize_\w+|wp_\w+)#'
+        - '#Variable \$_GET.*might not be defined#'
+        - '#Variable \$_POST.*might not be defined#'
+        - '#Variable \$_REQUEST.*might not be defined#'
+        - '#Call to an undefined function add_query_arg#'
+        - '#Call to an undefined function is_wp_error#'
+    
+    # Bootstrap files for WordPress functions
+    bootstrapFiles:
+        - /Users/ridwanarifandi/Local Sites/woocommerce/app/public/wp-includes/functions.php
+        - /Users/ridwanarifandi/Local Sites/woocommerce/app/public/wp-includes/plugin.php
+    
+    # Check only for fatal errors
+    checkMissingIterableValueType: false
+    checkGenericClassInNonGenericObjectType: false

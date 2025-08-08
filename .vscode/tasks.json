@@ -1,0 +1,93 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "PHP CodeSniffer Check",
+            "type": "shell",
+            "command": "./vendor/bin/phpcs",
+            "args": [
+                "--standard=WordPress",
+                "--extensions=php",
+                "admin/",
+                "includes/",
+                "public/",
+                "helper/"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": {
+                "owner": "phpcs",
+                "fileLocation": "absolute",
+                "pattern": [
+                    {
+                        "regexp": "^FILE: (.*)$",
+                        "file": 1
+                    },
+                    {
+                        "regexp": "^\\s*(\\d+)\\s*\\|\\s*\\w+\\s*\\|\\s*(.*)$",
+                        "line": 1,
+                        "message": 2,
+                        "loop": true
+                    }
+                ]
+            }
+        },
+        {
+            "label": "PHP Code Beautifier Fix",
+            "type": "shell",
+            "command": "./vendor/bin/phpcbf",
+            "args": [
+                "--standard=WordPress",
+                "--extensions=php",
+                "admin/",
+                "includes/",
+                "public/",
+                "helper/"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "PHPStan Analysis",
+            "type": "shell",
+            "command": "./vendor/bin/phpstan",
+            "args": [
+                "analyse",
+                "--level=5",
+                "admin/",
+                "includes/",
+                "public/",
+                "helper/"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": {
+                "owner": "phpstan",
+                "fileLocation": "absolute",
+                "pattern": [
+                    {
+                        "regexp": "^\\s*(\\d+)\\s+(.*)\\s+(.*)$",
+                        "line": 1,
+                        "severity": 2,
+                        "message": 3
+                    }
+                ]
+            }
+        }
+    ]
+}

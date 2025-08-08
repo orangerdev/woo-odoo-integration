@@ -1,0 +1,14 @@
+{
+    "recommendations": [
+        "bmewburn.vscode-intelephense-client",
+        "phpstan.vscode-phpstan",
+        "squizlabs.php-codesniffer",
+        "persoderlind.vscode-phpcbf",
+        "wordpresstoolbox.wordpress-toolbox",
+        "johnbillion.vscode-wordpress-hooks",
+        "ms-vscode.vscode-json",
+        "bradlc.vscode-tailwindcss",
+        "formulahendry.auto-rename-tag",
+        "ms-vscode.vscode-typescript-next"
+    ]
+}
