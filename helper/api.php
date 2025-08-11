@@ -15,8 +15,8 @@
  */
 
 // Prevent direct access
-if (!defined('ABSPATH')) {
-    exit;
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
 /**
@@ -38,74 +38,73 @@ if (!defined('ABSPATH')) {
  *
  * @return   void
  */
-function woo_odoo_integration_log_api_interaction($endpoint, $request_data = array(), $response = null, $log_level = 'info', $method = 'GET', $status_code = null)
-{
-    // Check if debug logging is enabled (only do detailed logging if enabled)
-    $debug_logging_enabled = carbon_get_theme_option('enable_debug_logging');
+function woo_odoo_integration_log_api_interaction( $endpoint, $request_data = array(), $response = null, $log_level = 'info', $method = 'GET', $status_code = null ) {
+	// Check if debug logging is enabled (only do detailed logging if enabled)
+	$debug_logging_enabled = carbon_get_theme_option( 'enable_debug_logging' );
 
-    // Always log errors regardless of debug setting
-    if ($log_level !== 'error' && !$debug_logging_enabled) {
-        return;
-    }
+	// Always log errors regardless of debug setting
+	if ( $log_level !== 'error' && ! $debug_logging_enabled ) {
+		return;
+	}
 
-    $logger = wc_get_logger();
+	$logger = wc_get_logger();
 
-    // Prepare log data structure
-    $log_data = array(
-        'timestamp' => current_time('mysql'),
-        'endpoint' => $endpoint,
-        'method' => strtoupper($method),
-        'status_code' => $status_code,
-    );
+	// Prepare log data structure
+	$log_data = array(
+		'timestamp' => current_time( 'mysql' ),
+		'endpoint' => $endpoint,
+		'method' => strtoupper( $method ),
+		'status_code' => $status_code,
+	);
 
-    // Add request and response data only if debug logging is enabled or it's an error
-    if ($debug_logging_enabled || $log_level === 'error') {
-        $log_data['request_data'] = woo_odoo_integration_mask_sensitive_data($request_data);
-        $log_data['response_data'] = is_wp_error($response) ?
-            array(
-                'error_code' => $response->get_error_code(),
-                'error_message' => $response->get_error_message(),
-                'error_data' => $response->get_error_data()
-            ) :
-            woo_odoo_integration_mask_sensitive_data($response);
-    }
+	// Add request and response data only if debug logging is enabled or it's an error
+	if ( $debug_logging_enabled || $log_level === 'error' ) {
+		$log_data['request_data'] = woo_odoo_integration_mask_sensitive_data( $request_data );
+		$log_data['response_data'] = is_wp_error( $response ) ?
+			array(
+				'error_code' => $response->get_error_code(),
+				'error_message' => $response->get_error_message(),
+				'error_data' => $response->get_error_data()
+			) :
+			woo_odoo_integration_mask_sensitive_data( $response );
+	}
 
-    // Create readable log message
-    if ($debug_logging_enabled || $log_level === 'error') {
-        $log_message = sprintf(
-            'Odoo API Call: %s %s | Status: %s | Request Data: %s | Response: %s',
-            $method,
-            $endpoint,
-            $status_code ? $status_code : 'N/A',
-            json_encode($log_data['request_data'] ?? array()),
-            json_encode($log_data['response_data'] ?? array())
-        );
-    } else {
-        // Simple logging for non-debug mode
-        $log_message = sprintf(
-            'Odoo API Call: %s %s | Status: %s',
-            $method,
-            $endpoint,
-            $status_code ? $status_code : 'N/A'
-        );
-    }
+	// Create readable log message
+	if ( $debug_logging_enabled || $log_level === 'error' ) {
+		$log_message = sprintf(
+			'Odoo API Call: %s %s | Status: %s | Request Data: %s | Response: %s',
+			$method,
+			$endpoint,
+			$status_code ? $status_code : 'N/A',
+			json_encode( $log_data['request_data'] ?? array() ),
+			json_encode( $log_data['response_data'] ?? array() )
+		);
+	} else {
+		// Simple logging for non-debug mode
+		$log_message = sprintf(
+			'Odoo API Call: %s %s | Status: %s',
+			$method,
+			$endpoint,
+			$status_code ? $status_code : 'N/A'
+		);
+	}
 
-    // Log based on level
-    switch ($log_level) {
-        case 'error':
-            $logger->error($log_message, array('source' => 'woo-odoo-api'));
-            break;
-        case 'warning':
-            $logger->warning($log_message, array('source' => 'woo-odoo-api'));
-            break;
-        case 'debug':
-            $logger->debug($log_message, array('source' => 'woo-odoo-api'));
-            break;
-        case 'info':
-        default:
-            $logger->info($log_message, array('source' => 'woo-odoo-api'));
-            break;
-    }
+	// Log based on level
+	switch ( $log_level ) {
+		case 'error':
+			$logger->error( $log_message, array( 'source' => 'woo-odoo-api' ) );
+			break;
+		case 'warning':
+			$logger->warning( $log_message, array( 'source' => 'woo-odoo-api' ) );
+			break;
+		case 'debug':
+			$logger->debug( $log_message, array( 'source' => 'woo-odoo-api' ) );
+			break;
+		case 'info':
+		default:
+			$logger->info( $log_message, array( 'source' => 'woo-odoo-api' ) );
+			break;
+	}
 }
 
 /**
@@ -121,48 +120,47 @@ function woo_odoo_integration_log_api_interaction($endpoint, $request_data = arr
  *
  * @return   mixed             Data with sensitive values masked
  */
-function woo_odoo_integration_mask_sensitive_data($data)
-{
-    if (is_array($data)) {
-        $masked_data = array();
-        foreach ($data as $key => $value) {
-            // List of sensitive field names to mask
-            $sensitive_fields = array(
-                'client_secret',
-                'access_token',
-                'password',
-                'token',
-                'secret',
-                'key',
-                'authorization',
-                'auth'
-            );
+function woo_odoo_integration_mask_sensitive_data( $data ) {
+	if ( is_array( $data ) ) {
+		$masked_data = array();
+		foreach ( $data as $key => $value ) {
+			// List of sensitive field names to mask
+			$sensitive_fields = array(
+				'client_secret',
+				'access_token',
+				'password',
+				'token',
+				'secret',
+				'key',
+				'authorization',
+				'auth'
+			);
 
-            // Check if key contains sensitive information
-            $is_sensitive = false;
-            foreach ($sensitive_fields as $sensitive_field) {
-                if (stripos($key, $sensitive_field) !== false) {
-                    $is_sensitive = true;
-                    break;
-                }
-            }
+			// Check if key contains sensitive information
+			$is_sensitive = false;
+			foreach ( $sensitive_fields as $sensitive_field ) {
+				if ( stripos( $key, $sensitive_field ) !== false ) {
+					$is_sensitive = true;
+					break;
+				}
+			}
 
-            if ($is_sensitive && is_string($value) && !empty($value)) {
-                // Mask the value but keep first and last 3 characters if long enough
-                if (strlen($value) > 10) {
-                    $masked_data[$key] = substr($value, 0, 3) . '***' . substr($value, -3);
-                } else {
-                    $masked_data[$key] = '***masked***';
-                }
-            } else {
-                // Recursively mask nested arrays
-                $masked_data[$key] = is_array($value) ? woo_odoo_integration_mask_sensitive_data($value) : $value;
-            }
-        }
-        return $masked_data;
-    }
+			if ( $is_sensitive && is_string( $value ) && ! empty( $value ) ) {
+				// Mask the value but keep first and last 3 characters if long enough
+				if ( strlen( $value ) > 10 ) {
+					$masked_data[ $key ] = substr( $value, 0, 3 ) . '***' . substr( $value, -3 );
+				} else {
+					$masked_data[ $key ] = '***masked***';
+				}
+			} else {
+				// Recursively mask nested arrays
+				$masked_data[ $key ] = is_array( $value ) ? woo_odoo_integration_mask_sensitive_data( $value ) : $value;
+			}
+		}
+		return $masked_data;
+	}
 
-    return $data;
+	return $data;
 }
 
 /**
@@ -185,65 +183,64 @@ function woo_odoo_integration_mask_sensitive_data($data)
  *
  * @throws   Exception                When API credentials are not configured
  */
-function woo_odoo_integration_api_get_access_token($force_refresh = false)
-{
-    $transient_key = 'woo_odoo_integration_access_token';
+function woo_odoo_integration_api_get_access_token( $force_refresh = false ) {
+	$transient_key = 'woo_odoo_integration_access_token';
 
-    // Check if we should force refresh or token doesn't exist
-    if (!$force_refresh) {
-        $cached_token = get_transient($transient_key);
-        if (false !== $cached_token && !empty($cached_token)) {
-            return $cached_token;
-        }
-    }
+	// Check if we should force refresh or token doesn't exist
+	if ( ! $force_refresh ) {
+		$cached_token = get_transient( $transient_key );
+		if ( false !== $cached_token && ! empty( $cached_token ) ) {
+			return $cached_token;
+		}
+	}
 
-    // Fire before authentication hook
-    do_action('woo_odoo_integration_before_auth');
+	// Fire before authentication hook
+	do_action( 'woo_odoo_integration_before_auth' );
 
-    // Get authentication credentials
-    $api_base_url = defined('WOO_ODOO_INTEGRATION_API_BASE_URL') ? WOO_ODOO_INTEGRATION_API_BASE_URL : carbon_get_theme_option('odoo_url');
-    $client_id = defined('WOO_ODOO_INTEGRATION_CLIENT_ID') ? WOO_ODOO_INTEGRATION_CLIENT_ID : carbon_get_theme_option('odoo_client_id');
-    $client_secret = defined('WOO_ODOO_INTEGRATION_CLIENT_SECRET') ? WOO_ODOO_INTEGRATION_CLIENT_SECRET : carbon_get_theme_option('odoo_client_secret');
-    $grant_type = defined('WOO_ODOO_INTEGRATION_GRANT_TYPE') ? WOO_ODOO_INTEGRATION_GRANT_TYPE : carbon_get_theme_option('odoo_grant_type');
-    $scope = defined('WOO_ODOO_INTEGRATION_SCOPE') ? WOO_ODOO_INTEGRATION_SCOPE : carbon_get_theme_option('odoo_scope');
+	// Get authentication credentials
+	$api_base_url = defined( 'WOO_ODOO_INTEGRATION_API_BASE_URL' ) ? WOO_ODOO_INTEGRATION_API_BASE_URL : carbon_get_theme_option( 'odoo_url' );
+	$client_id = defined( 'WOO_ODOO_INTEGRATION_CLIENT_ID' ) ? WOO_ODOO_INTEGRATION_CLIENT_ID : carbon_get_theme_option( 'odoo_client_id' );
+	$client_secret = defined( 'WOO_ODOO_INTEGRATION_CLIENT_SECRET' ) ? WOO_ODOO_INTEGRATION_CLIENT_SECRET : carbon_get_theme_option( 'odoo_client_secret' );
+	$grant_type = defined( 'WOO_ODOO_INTEGRATION_GRANT_TYPE' ) ? WOO_ODOO_INTEGRATION_GRANT_TYPE : carbon_get_theme_option( 'odoo_grant_type' );
+	$scope = defined( 'WOO_ODOO_INTEGRATION_SCOPE' ) ? WOO_ODOO_INTEGRATION_SCOPE : carbon_get_theme_option( 'odoo_scope' );
 
-    // Validate required credentials
-    if (empty($api_base_url) || empty($client_id) || empty($client_secret)) {
-        $error = new WP_Error(
-            'missing_credentials',
-            __('Odoo API credentials are not properly configured', 'woo-odoo-integration'),
-            array('status' => 500)
-        );
+	// Validate required credentials
+	if ( empty( $api_base_url ) || empty( $client_id ) || empty( $client_secret ) ) {
+		$error = new WP_Error(
+			'missing_credentials',
+			__( 'Odoo API credentials are not properly configured', 'woo-odoo-integration' ),
+			array( 'status' => 500 )
+		);
 
-        do_action('woo_odoo_integration_auth_failed', $error);
-        return $error;
-    }
+		do_action( 'woo_odoo_integration_auth_failed', $error );
+		return $error;
+	}
 
-    // Perform authentication
-    $auth_result = woo_odoo_integration_api_authenticate($api_base_url, $client_id, $client_secret, $grant_type, $scope);
-    if (is_wp_error($auth_result)) {
-        do_action('woo_odoo_integration_auth_failed', $auth_result);
-        return $auth_result;
-    }
+	// Perform authentication
+	$auth_result = woo_odoo_integration_api_authenticate( $api_base_url, $client_id, $client_secret, $grant_type, $scope );
+	if ( is_wp_error( $auth_result ) ) {
+		do_action( 'woo_odoo_integration_auth_failed', $auth_result );
+		return $auth_result;
+	}
 
-    // Use expires_in from response, with fallback to default
-    $token_expiry = isset($auth_result['expires_in']) ? intval($auth_result['expires_in']) : 3600;
+	// Use expires_in from response, with fallback to default
+	$token_expiry = isset( $auth_result['expires_in'] ) ? intval( $auth_result['expires_in'] ) : 3600;
 
-    // Allow override via constant
-    if (defined('WOO_ODOO_INTEGRATION_TOKEN_EXPIRY')) {
-        $token_expiry = WOO_ODOO_INTEGRATION_TOKEN_EXPIRY;
-    }
+	// Allow override via constant
+	if ( defined( 'WOO_ODOO_INTEGRATION_TOKEN_EXPIRY' ) ) {
+		$token_expiry = WOO_ODOO_INTEGRATION_TOKEN_EXPIRY;
+	}
 
-    // Store the access token (not the full auth result)
-    $access_token = $auth_result['access_token'];
-    set_transient($transient_key, $access_token, $token_expiry);
+	// Store the access token (not the full auth result)
+	$access_token = $auth_result['access_token'];
+	set_transient( $transient_key, $access_token, $token_expiry );
 
-    // Store additional token info for reference
-    set_transient('woo_odoo_integration_token_info', $auth_result, $token_expiry);
+	// Store additional token info for reference
+	set_transient( 'woo_odoo_integration_token_info', $auth_result, $token_expiry );
 
-    do_action('woo_odoo_integration_auth_success', $access_token);
+	do_action( 'woo_odoo_integration_auth_success', $access_token );
 
-    return $access_token;
+	return $access_token;
 }
 
 /**
@@ -264,147 +261,146 @@ function woo_odoo_integration_api_get_access_token($force_refresh = false)
  *
  * @return   array|WP_Error            Authentication response data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_authenticate($api_base_url, $client_id, $client_secret, $grant_type = 'client_credentials', $scope = 'all')
-{
-    // Build correct authentication endpoint
-    $auth_endpoint = trailingslashit($api_base_url) . 'api/authentication/oauth2/token';
+function woo_odoo_integration_api_authenticate( $api_base_url, $client_id, $client_secret, $grant_type = 'client_credentials', $scope = 'all' ) {
+	// Build correct authentication endpoint
+	$auth_endpoint = trailingslashit( $api_base_url ) . 'api/authentication/oauth2/token';
 
-    // Prepare authentication data
-    $auth_data = array(
-        'client_id' => sanitize_text_field($client_id),
-        'client_secret' => sanitize_text_field($client_secret),
-        'grant_type' => sanitize_text_field($grant_type),
-        'scope' => sanitize_text_field($scope),
-    );
+	// Prepare authentication data
+	$auth_data = array(
+		'client_id' => sanitize_text_field( $client_id ),
+		'client_secret' => sanitize_text_field( $client_secret ),
+		'grant_type' => sanitize_text_field( $grant_type ),
+		'scope' => sanitize_text_field( $scope ),
+	);
 
-    $args = array(
-        'body' => $auth_data,
-        'timeout' => 30,
-        'headers' => array(
-            'Content-Type' => 'application/x-www-form-urlencoded',
-            'Accept' => 'application/json',
-        ),
-    );
+	$args = array(
+		'body' => $auth_data,
+		'timeout' => 30,
+		'headers' => array(
+			'Content-Type' => 'application/x-www-form-urlencoded',
+			'Accept' => 'application/json',
+		),
+	);
 
-    // Log the authentication request (sensitive data will be masked)
-    woo_odoo_integration_log_api_interaction(
-        'api/authentication/oauth2/token',
-        $auth_data,
-        null,
-        'info',
-        'POST'
-    );
+	// Log the authentication request (sensitive data will be masked)
+	woo_odoo_integration_log_api_interaction(
+		'api/authentication/oauth2/token',
+		$auth_data,
+		null,
+		'info',
+		'POST'
+	);
 
-    // Make authentication request
-    $response = wp_safe_remote_post($auth_endpoint, $args);
+	// Make authentication request
+	$response = wp_safe_remote_post( $auth_endpoint, $args );
 
-    // Check for HTTP errors
-    if (is_wp_error($response)) {
-        $error = new WP_Error(
-            'auth_request_failed',
-            sprintf(__('Authentication request failed: %s', 'woo-odoo-integration'), $response->get_error_message()),
-            array('status' => 500)
-        );
+	// Check for HTTP errors
+	if ( is_wp_error( $response ) ) {
+		$error = new WP_Error(
+			'auth_request_failed',
+			sprintf( __( 'Authentication request failed: %s', 'woo-odoo-integration' ), $response->get_error_message() ),
+			array( 'status' => 500 )
+		);
 
-        // Log authentication failure
-        woo_odoo_integration_log_api_interaction(
-            'api/authentication/oauth2/token',
-            $auth_data,
-            $error,
-            'error',
-            'POST'
-        );
+		// Log authentication failure
+		woo_odoo_integration_log_api_interaction(
+			'api/authentication/oauth2/token',
+			$auth_data,
+			$error,
+			'error',
+			'POST'
+		);
 
-        return $error;
-    }
+		return $error;
+	}
 
-    $status_code = wp_remote_retrieve_response_code($response);
-    $body = wp_remote_retrieve_body($response);
+	$status_code = wp_remote_retrieve_response_code( $response );
+	$body = wp_remote_retrieve_body( $response );
 
-    // Handle non-200 responses
-    if (200 !== $status_code) {
-        $error = new WP_Error(
-            'auth_failed',
-            sprintf(__('Authentication failed with status %d: %s', 'woo-odoo-integration'), $status_code, $body),
-            array('status' => $status_code)
-        );
+	// Handle non-200 responses
+	if ( 200 !== $status_code ) {
+		$error = new WP_Error(
+			'auth_failed',
+			sprintf( __( 'Authentication failed with status %d: %s', 'woo-odoo-integration' ), $status_code, $body ),
+			array( 'status' => $status_code )
+		);
 
-        // Log authentication failure with status code
-        woo_odoo_integration_log_api_interaction(
-            'api/authentication/oauth2/token',
-            $auth_data,
-            $error,
-            'error',
-            'POST',
-            $status_code
-        );
+		// Log authentication failure with status code
+		woo_odoo_integration_log_api_interaction(
+			'api/authentication/oauth2/token',
+			$auth_data,
+			$error,
+			'error',
+			'POST',
+			$status_code
+		);
 
-        return $error;
-    }
+		return $error;
+	}
 
-    // Parse response
-    $auth_response = json_decode($body, true);
+	// Parse response
+	$auth_response = json_decode( $body, true );
 
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        $error = new WP_Error(
-            'auth_invalid_response',
-            __('Invalid JSON response from authentication server', 'woo-odoo-integration'),
-            array('status' => 500)
-        );
+	if ( json_last_error() !== JSON_ERROR_NONE ) {
+		$error = new WP_Error(
+			'auth_invalid_response',
+			__( 'Invalid JSON response from authentication server', 'woo-odoo-integration' ),
+			array( 'status' => 500 )
+		);
 
-        // Log JSON parsing error
-        woo_odoo_integration_log_api_interaction(
-            'api/authentication/oauth2/token',
-            $auth_data,
-            array('raw_response' => $body, 'json_error' => json_last_error_msg()),
-            'error',
-            'POST',
-            $status_code
-        );
+		// Log JSON parsing error
+		woo_odoo_integration_log_api_interaction(
+			'api/authentication/oauth2/token',
+			$auth_data,
+			array( 'raw_response' => $body, 'json_error' => json_last_error_msg() ),
+			'error',
+			'POST',
+			$status_code
+		);
 
-        return $error;
-    }
+		return $error;
+	}
 
-    // Validate response contains access token
-    if (empty($auth_response['access_token'])) {
-        $error = new WP_Error(
-            'auth_no_token',
-            __('No access token received from authentication server', 'woo-odoo-integration'),
-            array('status' => 500)
-        );
+	// Validate response contains access token
+	if ( empty( $auth_response['access_token'] ) ) {
+		$error = new WP_Error(
+			'auth_no_token',
+			__( 'No access token received from authentication server', 'woo-odoo-integration' ),
+			array( 'status' => 500 )
+		);
 
-        // Log missing token error
-        woo_odoo_integration_log_api_interaction(
-            'api/authentication/oauth2/token',
-            $auth_data,
-            $auth_response,
-            'error',
-            'POST',
-            $status_code
-        );
+		// Log missing token error
+		woo_odoo_integration_log_api_interaction(
+			'api/authentication/oauth2/token',
+			$auth_data,
+			$auth_response,
+			'error',
+			'POST',
+			$status_code
+		);
 
-        return $error;
-    }
+		return $error;
+	}
 
-    // Return full authentication response for better token management
-    $final_response = array(
-        'access_token' => sanitize_text_field($auth_response['access_token']),
-        'expires_in' => isset($auth_response['expires_in']) ? intval($auth_response['expires_in']) : 3600,
-        'token_type' => isset($auth_response['token_type']) ? sanitize_text_field($auth_response['token_type']) : 'Bearer',
-        'scope' => isset($auth_response['scope']) ? sanitize_text_field($auth_response['scope']) : $scope,
-    );
+	// Return full authentication response for better token management
+	$final_response = array(
+		'access_token' => sanitize_text_field( $auth_response['access_token'] ),
+		'expires_in' => isset( $auth_response['expires_in'] ) ? intval( $auth_response['expires_in'] ) : 3600,
+		'token_type' => isset( $auth_response['token_type'] ) ? sanitize_text_field( $auth_response['token_type'] ) : 'Bearer',
+		'scope' => isset( $auth_response['scope'] ) ? sanitize_text_field( $auth_response['scope'] ) : $scope,
+	);
 
-    // Log successful authentication
-    woo_odoo_integration_log_api_interaction(
-        'api/authentication/oauth2/token',
-        $auth_data,
-        $final_response,
-        'info',
-        'POST',
-        $status_code
-    );
+	// Log successful authentication
+	woo_odoo_integration_log_api_interaction(
+		'api/authentication/oauth2/token',
+		$auth_data,
+		$final_response,
+		'info',
+		'POST',
+		$status_code
+	);
 
-    return $final_response;
+	return $final_response;
 }
 
 /**
@@ -428,170 +424,169 @@ function woo_odoo_integration_api_authenticate($api_base_url, $client_id, $clien
  *
  * @return   array|WP_Error         Response data or WP_Error on failure
  */
-function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 'GET', $retry = true)
-{
-    // Get access token
-    $access_token = woo_odoo_integration_api_get_access_token();
+function woo_odoo_integration_api_request( $endpoint, $args = array(), $method = 'GET', $retry = true ) {
+	// Get access token
+	$access_token = woo_odoo_integration_api_get_access_token();
 
-    if (is_wp_error($access_token)) {
-        return $access_token;
-    }
+	if ( is_wp_error( $access_token ) ) {
+		return $access_token;
+	}
 
-    // Build full URL
-    $api_base_url = defined('WOO_ODOO_INTEGRATION_API_BASE_URL') ? WOO_ODOO_INTEGRATION_API_BASE_URL : carbon_get_theme_option('odoo_url');
-    $url = trailingslashit($api_base_url) . ltrim($endpoint, '/');
+	// Build full URL
+	$api_base_url = defined( 'WOO_ODOO_INTEGRATION_API_BASE_URL' ) ? WOO_ODOO_INTEGRATION_API_BASE_URL : carbon_get_theme_option( 'odoo_url' );
+	$url = trailingslashit( $api_base_url ) . ltrim( $endpoint, '/' );
 
-    // Prepare request arguments
-    $default_args = array(
-        'method' => strtoupper($method),
-        'timeout' => 30,
-        'headers' => array(
-            'Authorization' => 'Bearer ' . $access_token,
-            'Content-Type' => 'application/json',
-            'Accept' => 'application/json',
-        ),
-    );
+	// Prepare request arguments
+	$default_args = array(
+		'method' => strtoupper( $method ),
+		'timeout' => 30,
+		'headers' => array(
+			'Authorization' => 'Bearer ' . $access_token,
+			'Content-Type' => 'application/json',
+			'Accept' => 'application/json',
+		),
+	);
 
-    // Merge with provided arguments
-    $request_args = wp_parse_args($args, $default_args);
+	// Merge with provided arguments
+	$request_args = wp_parse_args( $args, $default_args );
 
-    // Apply filters to request arguments
-    $request_args = apply_filters('woo_odoo_integration_api_request_args', $request_args, $endpoint);
+	// Apply filters to request arguments
+	$request_args = apply_filters( 'woo_odoo_integration_api_request_args', $request_args, $endpoint );
 
-    // Extract request data for logging (body, query params, etc.)
-    $request_data = array();
-    if (isset($request_args['body'])) {
-        $request_data['body'] = $request_args['body'];
-    }
+	// Extract request data for logging (body, query params, etc.)
+	$request_data = array();
+	if ( isset( $request_args['body'] ) ) {
+		$request_data['body'] = $request_args['body'];
+	}
 
-    // Parse URL to get query parameters for logging
-    $parsed_url = parse_url($url);
-    if (isset($parsed_url['query'])) {
-        parse_str($parsed_url['query'], $query_params);
-        $request_data['query_params'] = $query_params;
-    }
+	// Parse URL to get query parameters for logging
+	$parsed_url = parse_url( $url );
+	if ( isset( $parsed_url['query'] ) ) {
+		parse_str( $parsed_url['query'], $query_params );
+		$request_data['query_params'] = $query_params;
+	}
 
-    // Fire before request hook
-    do_action('woo_odoo_integration_before_api_request', $endpoint, $request_args);
+	// Fire before request hook
+	do_action( 'woo_odoo_integration_before_api_request', $endpoint, $request_args );
 
-    // Make the request
-    $response = wp_remote_request($url, $request_args);
+	// Make the request
+	$response = wp_remote_request( $url, $request_args );
 
-    // Check for HTTP errors
-    if (is_wp_error($response)) {
-        $error = new WP_Error(
-            'api_request_failed',
-            sprintf(__('API request failed: %s', 'woo-odoo-integration'), $response->get_error_message()),
-            array('status' => 500, 'endpoint' => $endpoint)
-        );
+	// Check for HTTP errors
+	if ( is_wp_error( $response ) ) {
+		$error = new WP_Error(
+			'api_request_failed',
+			sprintf( __( 'API request failed: %s', 'woo-odoo-integration' ), $response->get_error_message() ),
+			array( 'status' => 500, 'endpoint' => $endpoint )
+		);
 
-        // Log request failure
-        woo_odoo_integration_log_api_interaction(
-            $endpoint,
-            $request_data,
-            $error,
-            'error',
-            $method
-        );
+		// Log request failure
+		woo_odoo_integration_log_api_interaction(
+			$endpoint,
+			$request_data,
+			$error,
+			'error',
+			$method
+		);
 
-        do_action('woo_odoo_integration_api_request_failed', $endpoint, $error);
-        return $error;
-    }
+		do_action( 'woo_odoo_integration_api_request_failed', $endpoint, $error );
+		return $error;
+	}
 
-    $status_code = wp_remote_retrieve_response_code($response);
-    $body = wp_remote_retrieve_body($response);
+	$status_code = wp_remote_retrieve_response_code( $response );
+	$body = wp_remote_retrieve_body( $response );
 
-    // Handle token expiration (401 Unauthorized) with retry
-    if (401 === $status_code && $retry) {
-        // Log token expiration attempt
-        woo_odoo_integration_log_api_interaction(
-            $endpoint,
-            $request_data,
-            array('message' => 'Token expired, attempting refresh'),
-            'warning',
-            $method,
-            $status_code
-        );
+	// Handle token expiration (401 Unauthorized) with retry
+	if ( 401 === $status_code && $retry ) {
+		// Log token expiration attempt
+		woo_odoo_integration_log_api_interaction(
+			$endpoint,
+			$request_data,
+			array( 'message' => 'Token expired, attempting refresh' ),
+			'warning',
+			$method,
+			$status_code
+		);
 
-        // Force refresh token and retry once
-        $new_token = woo_odoo_integration_api_get_access_token(true);
+		// Force refresh token and retry once
+		$new_token = woo_odoo_integration_api_get_access_token( true );
 
-        if (!is_wp_error($new_token)) {
-            return woo_odoo_integration_api_request($endpoint, $args, $method, false);
-        }
-    }
+		if ( ! is_wp_error( $new_token ) ) {
+			return woo_odoo_integration_api_request( $endpoint, $args, $method, false );
+		}
+	}
 
-    // Handle other error status codes
-    if ($status_code < 200 || $status_code >= 300) {
-        $error = new \WP_Error(
-            'api_error_' . $status_code,
-            sprintf(__('Odoo API returned error %d: %s', 'woo-odoo-integration'), $status_code, $body),
-            array('status' => $status_code, 'endpoint' => $endpoint)
-        );
+	// Handle other error status codes
+	if ( $status_code < 200 || $status_code >= 300 ) {
+		$error = new \WP_Error(
+			'api_error_' . $status_code,
+			sprintf( __( 'Access url: %s. Odoo API returned error %d: %s', 'woo-odoo-integration' ), $url, $status_code, $body ),
+			array( 'status' => $status_code, 'endpoint' => $endpoint )
+		);
 
-        // Log error response
-        woo_odoo_integration_log_api_interaction(
-            $endpoint,
-            $request_data,
-            array(
-                'status_code' => $status_code,
-                'raw_response' => $body,
-                'error' => $error
-            ),
-            'error',
-            $method,
-            $status_code
-        );
+		// Log error response
+		woo_odoo_integration_log_api_interaction(
+			$endpoint,
+			$request_data,
+			array(
+				'status_code' => $status_code,
+				'raw_response' => $body,
+				'error' => $error
+			),
+			'error',
+			$method,
+			$status_code
+		);
 
-        do_action('woo_odoo_integration_api_request_failed', $endpoint, $error);
-        return $error;
-    }
+		do_action( 'woo_odoo_integration_api_request_failed', $endpoint, $error );
+		return $error;
+	}
 
-    // Parse JSON response
-    $response_data = json_decode($body, true);
+	// Parse JSON response
+	$response_data = json_decode( $body, true );
 
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        $error = new \WP_Error(
-            'api_invalid_json',
-            __('Invalid JSON response from Odoo API', 'woo-odoo-integration'),
-            array('status' => 500, 'endpoint' => $endpoint)
-        );
+	if ( json_last_error() !== JSON_ERROR_NONE ) {
+		$error = new \WP_Error(
+			'api_invalid_json',
+			__( 'Invalid JSON response from Odoo API', 'woo-odoo-integration' ),
+			array( 'status' => 500, 'endpoint' => $endpoint )
+		);
 
-        // Log JSON parsing error
-        woo_odoo_integration_log_api_interaction(
-            $endpoint,
-            $request_data,
-            array(
-                'raw_response' => $body,
-                'json_error' => json_last_error_msg(),
-                'error' => $error
-            ),
-            'error',
-            $method,
-            $status_code
-        );
+		// Log JSON parsing error
+		woo_odoo_integration_log_api_interaction(
+			$endpoint,
+			$request_data,
+			array(
+				'raw_response' => $body,
+				'json_error' => json_last_error_msg(),
+				'error' => $error
+			),
+			'error',
+			$method,
+			$status_code
+		);
 
-        do_action('woo_odoo_integration_api_request_failed', $endpoint, $error);
-        return $error;
-    }
+		do_action( 'woo_odoo_integration_api_request_failed', $endpoint, $error );
+		return $error;
+	}
 
-    // Apply filters to response
-    $response_data = apply_filters('woo_odoo_integration_api_response', $response_data, $endpoint);
+	// Apply filters to response
+	$response_data = apply_filters( 'woo_odoo_integration_api_response', $response_data, $endpoint );
 
-    // Log successful request
-    woo_odoo_integration_log_api_interaction(
-        $endpoint,
-        $request_data,
-        $response_data,
-        'info',
-        $method,
-        $status_code
-    );
+	// Log successful request
+	woo_odoo_integration_log_api_interaction(
+		$endpoint,
+		$request_data,
+		$response_data,
+		'info',
+		$method,
+		$status_code
+	);
 
-    // Fire after request hook
-    do_action('woo_odoo_integration_after_api_request', $endpoint, $response_data);
+	// Fire after request hook
+	do_action( 'woo_odoo_integration_after_api_request', $endpoint, $response_data );
 
-    return $response_data;
+	return $response_data;
 }
 
 /**
@@ -608,14 +603,13 @@ function woo_odoo_integration_api_request($endpoint, $args = array(), $method = 
  *
  * @return   array|WP_Error          Response data or WP_Error on failure
  */
-function woo_odoo_integration_api_get($endpoint, $query_args = array())
-{
-    // Add query parameters to endpoint if provided
-    if (!empty($query_args)) {
-        $endpoint = add_query_arg($query_args, $endpoint);
-    }
+function woo_odoo_integration_api_get( $endpoint, $query_args = array() ) {
+	// Add query parameters to endpoint if provided
+	if ( ! empty( $query_args ) ) {
+		$endpoint = add_query_arg( $query_args, $endpoint );
+	}
 
-    return woo_odoo_integration_api_request($endpoint, array(), 'GET');
+	return woo_odoo_integration_api_request( $endpoint, array(), 'GET' );
 }
 
 /**
@@ -632,13 +626,12 @@ function woo_odoo_integration_api_get($endpoint, $query_args = array())
  *
  * @return   array|WP_Error        Response data or WP_Error on failure
  */
-function woo_odoo_integration_api_post($endpoint, $data = array())
-{
-    $args = array(
-        'body' => wp_json_encode($data),
-    );
+function woo_odoo_integration_api_post( $endpoint, $data = array() ) {
+	$args = array(
+		'body' => wp_json_encode( $data ),
+	);
 
-    return woo_odoo_integration_api_request($endpoint, $args, 'POST');
+	return woo_odoo_integration_api_request( $endpoint, $args, 'POST' );
 }
 
 /**
@@ -655,13 +648,12 @@ function woo_odoo_integration_api_post($endpoint, $data = array())
  *
  * @return   array|WP_Error        Response data or WP_Error on failure
  */
-function woo_odoo_integration_api_put($endpoint, $data = array())
-{
-    $args = array(
-        'body' => wp_json_encode($data),
-    );
+function woo_odoo_integration_api_put( $endpoint, $data = array() ) {
+	$args = array(
+		'body' => wp_json_encode( $data ),
+	);
 
-    return woo_odoo_integration_api_request($endpoint, $args, 'PUT');
+	return woo_odoo_integration_api_request( $endpoint, $args, 'PUT' );
 }
 
 /**
@@ -676,9 +668,8 @@ function woo_odoo_integration_api_put($endpoint, $data = array())
  *
  * @return   array|WP_Error        Response data or WP_Error on failure
  */
-function woo_odoo_integration_api_delete($endpoint)
-{
-    return woo_odoo_integration_api_request($endpoint, array(), 'DELETE');
+function woo_odoo_integration_api_delete( $endpoint ) {
+	return woo_odoo_integration_api_request( $endpoint, array(), 'DELETE' );
 }
 
 /**
@@ -692,9 +683,8 @@ function woo_odoo_integration_api_delete($endpoint)
  *
  * @return   bool    True if transient was deleted, false otherwise
  */
-function woo_odoo_integration_api_clear_token_cache()
-{
-    return delete_transient('woo_odoo_integration_access_token');
+function woo_odoo_integration_api_clear_token_cache() {
+	return delete_transient( 'woo_odoo_integration_access_token' );
 }
 
 /**
@@ -708,25 +698,24 @@ function woo_odoo_integration_api_clear_token_cache()
  *
  * @return   array|WP_Error        Connection status data or WP_Error on failure
  */
-function woo_odoo_integration_api_test_connection()
-{
-    // Try to get basic system info or user profile
-    $response = woo_odoo_integration_api_get('system/info');
+function woo_odoo_integration_api_test_connection() {
+	// Try to get basic system info or user profile
+	$response = woo_odoo_integration_api_get( 'system/info' );
 
-    if (is_wp_error($response)) {
-        return new WP_Error(
-            'connection_test_failed',
-            sprintf(__('Connection test failed: %s', 'woo-odoo-integration'), $response->get_error_message()),
-            array('details' => $response->get_error_data())
-        );
-    }
+	if ( is_wp_error( $response ) ) {
+		return new WP_Error(
+			'connection_test_failed',
+			sprintf( __( 'Connection test failed: %s', 'woo-odoo-integration' ), $response->get_error_message() ),
+			array( 'details' => $response->get_error_data() )
+		);
+	}
 
-    return array(
-        'status' => 'success',
-        'message' => __('Successfully connected to Odoo API', 'woo-odoo-integration'),
-        'timestamp' => current_time('timestamp'),
-        'data' => $response,
-    );
+	return array(
+		'status' => 'success',
+		'message' => __( 'Successfully connected to Odoo API', 'woo-odoo-integration' ),
+		'timestamp' => current_time( 'timestamp' ),
+		'data' => $response,
+	);
 }
 
 /**
@@ -740,9 +729,8 @@ function woo_odoo_integration_api_test_connection()
  *
  * @return   array|false    Token information array or false if not cached
  */
-function woo_odoo_integration_api_get_token_info()
-{
-    return get_transient('woo_odoo_integration_token_info');
+function woo_odoo_integration_api_get_token_info() {
+	return get_transient( 'woo_odoo_integration_token_info' );
 }
 
 /**
@@ -758,25 +746,24 @@ function woo_odoo_integration_api_get_token_info()
  *
  * @return   bool   True if token expires within threshold, false otherwise
  */
-function woo_odoo_integration_api_token_expires_soon($threshold_seconds = 300)
-{
-    $token_info = woo_odoo_integration_api_get_token_info();
+function woo_odoo_integration_api_token_expires_soon( $threshold_seconds = 300 ) {
+	$token_info = woo_odoo_integration_api_get_token_info();
 
-    if (false === $token_info || !isset($token_info['expires_in'])) {
-        return true; // Assume expiring if no info available
-    }
+	if ( false === $token_info || ! isset( $token_info['expires_in'] ) ) {
+		return true; // Assume expiring if no info available
+	}
 
-    // Get remaining time on the transient
-    $transient_timeout = get_option('_transient_timeout_woo_odoo_integration_access_token');
+	// Get remaining time on the transient
+	$transient_timeout = get_option( '_transient_timeout_woo_odoo_integration_access_token' );
 
-    if (false === $transient_timeout) {
-        return true; // No timeout set, assume expiring
-    }
+	if ( false === $transient_timeout ) {
+		return true; // No timeout set, assume expiring
+	}
 
-    $current_time = time();
-    $time_until_expiry = $transient_timeout - $current_time;
+	$current_time = time();
+	$time_until_expiry = $transient_timeout - $current_time;
 
-    return $time_until_expiry <= $threshold_seconds;
+	return $time_until_expiry <= $threshold_seconds;
 }
 
 /**
@@ -800,81 +787,80 @@ function woo_odoo_integration_api_token_expires_soon($threshold_seconds = 300)
  *
  * @throws   InvalidArgumentException When required customer fields are missing
  */
-function woo_odoo_integration_api_create_customer($customer_data, $wc_customer_id = null)
-{
-    // Fire before create customer hook
-    do_action('woo_odoo_integration_before_create_customer', $customer_data);
+function woo_odoo_integration_api_create_customer( $customer_data, $wc_customer_id = null ) {
+	// Fire before create customer hook
+	do_action( 'woo_odoo_integration_before_create_customer', $customer_data );
 
-    // Validate required fields
-    $required_fields = array('name', 'email');
-    foreach ($required_fields as $field) {
-        if (empty($customer_data[$field])) {
-            $error = new WP_Error(
-                'missing_required_field',
-                sprintf(__('Required field "%s" is missing for customer creation', 'woo-odoo-integration'), $field),
-                array('status' => 400, 'field' => $field)
-            );
+	// Validate required fields
+	$required_fields = array( 'name', 'email' );
+	foreach ( $required_fields as $field ) {
+		if ( empty( $customer_data[ $field ] ) ) {
+			$error = new WP_Error(
+				'missing_required_field',
+				sprintf( __( 'Required field "%s" is missing for customer creation', 'woo-odoo-integration' ), $field ),
+				array( 'status' => 400, 'field' => $field )
+			);
 
-            do_action('woo_odoo_integration_create_customer_failed', $error, $customer_data);
-            return $error;
-        }
-    }
+			do_action( 'woo_odoo_integration_create_customer_failed', $error, $customer_data );
+			return $error;
+		}
+	}
 
-    // Prepare customer data for Odoo API
-    $odoo_customer_data = array(
-        'name' => sanitize_text_field($customer_data['name']),
-        'email' => sanitize_email($customer_data['email']),
-        'street' => isset($customer_data['street']) ? sanitize_text_field($customer_data['street']) : '',
-        'street2' => isset($customer_data['street2']) ? sanitize_text_field($customer_data['street2']) : '',
-        'city' => isset($customer_data['city']) ? sanitize_text_field($customer_data['city']) : '',
-        'zip' => isset($customer_data['zip']) ? sanitize_text_field($customer_data['zip']) : '',
-        'vat' => isset($customer_data['vat']) ? sanitize_text_field($customer_data['vat']) : '',
-        'phone' => isset($customer_data['phone']) ? sanitize_text_field($customer_data['phone']) : '',
-        'mobile' => isset($customer_data['mobile']) ? sanitize_text_field($customer_data['mobile']) : '',
-        'country_id' => isset($customer_data['country_id']) ? sanitize_text_field($customer_data['country_id']) : '',
-    );
+	// Prepare customer data for Odoo API
+	$odoo_customer_data = array(
+		'name' => sanitize_text_field( $customer_data['name'] ),
+		'email' => sanitize_email( $customer_data['email'] ),
+		'street' => isset( $customer_data['street'] ) ? sanitize_text_field( $customer_data['street'] ) : '',
+		'street2' => isset( $customer_data['street2'] ) ? sanitize_text_field( $customer_data['street2'] ) : '',
+		'city' => isset( $customer_data['city'] ) ? sanitize_text_field( $customer_data['city'] ) : '',
+		'zip' => isset( $customer_data['zip'] ) ? sanitize_text_field( $customer_data['zip'] ) : '',
+		'vat' => isset( $customer_data['vat'] ) ? sanitize_text_field( $customer_data['vat'] ) : '',
+		'phone' => isset( $customer_data['phone'] ) ? sanitize_text_field( $customer_data['phone'] ) : '',
+		'mobile' => isset( $customer_data['mobile'] ) ? sanitize_text_field( $customer_data['mobile'] ) : '',
+		'country_id' => isset( $customer_data['country_id'] ) ? sanitize_text_field( $customer_data['country_id'] ) : '',
+	);
 
-    // Remove empty fields to avoid API issues
-    $odoo_customer_data = array_filter($odoo_customer_data, function ($value) {
-        return !empty($value);
-    });
+	// Remove empty fields to avoid API issues
+	$odoo_customer_data = array_filter( $odoo_customer_data, function ($value) {
+		return ! empty( $value );
+	} );
 
-    // Apply filters to customer data before sending
-    $odoo_customer_data = apply_filters('woo_odoo_integration_customer_data', $odoo_customer_data, $customer_data);
+	// Apply filters to customer data before sending
+	$odoo_customer_data = apply_filters( 'woo_odoo_integration_customer_data', $odoo_customer_data, $customer_data );
 
-    // Make API request to create customer
-    $response = woo_odoo_integration_api_post('api/customers', $odoo_customer_data);
+	// Make API request to create customer
+	$response = woo_odoo_integration_api_post( 'api/customers', $odoo_customer_data );
 
-    if (is_wp_error($response)) {
-        do_action('woo_odoo_integration_create_customer_failed', $response, $customer_data);
-        return $response;
-    }
+	if ( is_wp_error( $response ) ) {
+		do_action( 'woo_odoo_integration_create_customer_failed', $response, $customer_data );
+		return $response;
+	}
 
-    // Parse Odoo response
-    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
-        $error = new WP_Error(
-            'odoo_create_customer_failed',
-            __('Odoo API returned unexpected response format', 'woo-odoo-integration'),
-            array('status' => 500, 'response' => $response)
-        );
+	// Parse Odoo response
+	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
+		$error = new WP_Error(
+			'odoo_create_customer_failed',
+			__( 'Odoo API returned unexpected response format', 'woo-odoo-integration' ),
+			array( 'status' => 500, 'response' => $response )
+		);
 
-        do_action('woo_odoo_integration_create_customer_failed', $error, $customer_data);
-        return $error;
-    }
+		do_action( 'woo_odoo_integration_create_customer_failed', $error, $customer_data );
+		return $error;
+	}
 
-    // Get created customer data
-    $created_customer = $response['data'][0];
+	// Get created customer data
+	$created_customer = $response['data'][0];
 
-    // Store Odoo customer UUID in WooCommerce if customer ID provided
-    if ($wc_customer_id && isset($created_customer['uuid'])) {
-        update_user_meta($wc_customer_id, '_odoo_customer_uuid', sanitize_text_field($created_customer['uuid']));
-        update_user_meta($wc_customer_id, '_odoo_last_sync', current_time('timestamp'));
-    }
+	// Store Odoo customer UUID in WooCommerce if customer ID provided
+	if ( $wc_customer_id && isset( $created_customer['uuid'] ) ) {
+		update_user_meta( $wc_customer_id, '_odoo_customer_uuid', sanitize_text_field( $created_customer['uuid'] ) );
+		update_user_meta( $wc_customer_id, '_odoo_last_sync', current_time( 'timestamp' ) );
+	}
 
-    // Fire after create customer hook
-    do_action('woo_odoo_integration_after_create_customer', $created_customer, $wc_customer_id);
+	// Fire after create customer hook
+	do_action( 'woo_odoo_integration_after_create_customer', $created_customer, $wc_customer_id );
 
-    return $created_customer;
+	return $created_customer;
 }
 
 /**
@@ -890,89 +876,88 @@ function woo_odoo_integration_api_create_customer($customer_data, $wc_customer_i
  *
  * @return   array|WP_Error         Created customer data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_create_guest_customer($guest_data)
-{
-    // Fire before create guest customer hook
-    do_action('woo_odoo_integration_before_create_guest_customer', $guest_data);
+function woo_odoo_integration_api_create_guest_customer( $guest_data ) {
+	// Fire before create guest customer hook
+	do_action( 'woo_odoo_integration_before_create_guest_customer', $guest_data );
 
-    // Validate required fields for guest customer
-    $required_fields = array('name', 'email');
-    foreach ($required_fields as $field) {
-        if (empty($guest_data[$field])) {
-            $error = new WP_Error(
-                'missing_required_field',
-                sprintf(__('Required field "%s" is missing for guest customer creation', 'woo-odoo-integration'), $field),
-                array('status' => 400, 'field' => $field)
-            );
+	// Validate required fields for guest customer
+	$required_fields = array( 'name', 'email' );
+	foreach ( $required_fields as $field ) {
+		if ( empty( $guest_data[ $field ] ) ) {
+			$error = new WP_Error(
+				'missing_required_field',
+				sprintf( __( 'Required field "%s" is missing for guest customer creation', 'woo-odoo-integration' ), $field ),
+				array( 'status' => 400, 'field' => $field )
+			);
 
-            do_action('woo_odoo_integration_create_guest_customer_failed', $error, $guest_data);
-            return $error;
-        }
-    }
+			do_action( 'woo_odoo_integration_create_guest_customer_failed', $error, $guest_data );
+			return $error;
+		}
+	}
 
-    // Prepare guest customer data for Odoo API
-    $odoo_customer_data = array(
-        'name' => sanitize_text_field($guest_data['name']),
-        'email' => sanitize_email($guest_data['email']),
-        'phone' => isset($guest_data['phone']) ? sanitize_text_field($guest_data['phone']) : '',
-    );
+	// Prepare guest customer data for Odoo API
+	$odoo_customer_data = array(
+		'name' => sanitize_text_field( $guest_data['name'] ),
+		'email' => sanitize_email( $guest_data['email'] ),
+		'phone' => isset( $guest_data['phone'] ) ? sanitize_text_field( $guest_data['phone'] ) : '',
+	);
 
-    // Add address data if provided
-    if (isset($guest_data['address']) && is_array($guest_data['address'])) {
-        $address = $guest_data['address'];
+	// Add address data if provided
+	if ( isset( $guest_data['address'] ) && is_array( $guest_data['address'] ) ) {
+		$address = $guest_data['address'];
 
-        if (!empty($address['street'])) {
-            $odoo_customer_data['street'] = sanitize_text_field($address['street']);
-        }
+		if ( ! empty( $address['street'] ) ) {
+			$odoo_customer_data['street'] = sanitize_text_field( $address['street'] );
+		}
 
-        if (!empty($address['street2'])) {
-            $odoo_customer_data['street2'] = sanitize_text_field($address['street2']);
-        }
+		if ( ! empty( $address['street2'] ) ) {
+			$odoo_customer_data['street2'] = sanitize_text_field( $address['street2'] );
+		}
 
-        if (!empty($address['city'])) {
-            $odoo_customer_data['city'] = sanitize_text_field($address['city']);
-        }
+		if ( ! empty( $address['city'] ) ) {
+			$odoo_customer_data['city'] = sanitize_text_field( $address['city'] );
+		}
 
-        if (!empty($address['zip'])) {
-            $odoo_customer_data['zip'] = absint(sanitize_text_field($address['zip']));
-        }
-    }
+		if ( ! empty( $address['zip'] ) ) {
+			$odoo_customer_data['zip'] = absint( sanitize_text_field( $address['zip'] ) );
+		}
+	}
 
-    // Remove empty fields to avoid API issues
-    $odoo_customer_data = array_filter($odoo_customer_data, function ($value) {
-        return !empty($value);
-    });
+	// Remove empty fields to avoid API issues
+	$odoo_customer_data = array_filter( $odoo_customer_data, function ($value) {
+		return ! empty( $value );
+	} );
 
-    // Apply filters to guest customer data before sending
-    $odoo_customer_data = apply_filters('woo_odoo_integration_guest_customer_data', $odoo_customer_data, $guest_data);
+	// Apply filters to guest customer data before sending
+	$odoo_customer_data = apply_filters( 'woo_odoo_integration_guest_customer_data', $odoo_customer_data, $guest_data );
 
-    // Make API request to create guest customer
-    $response = woo_odoo_integration_api_post('api/customers', $odoo_customer_data);
+	// Make API request to create guest customer
+	$response = woo_odoo_integration_api_post( 'api/customers', $odoo_customer_data );
 
-    if (is_wp_error($response)) {
-        do_action('woo_odoo_integration_create_guest_customer_failed', $response, $odoo_customer_data);
-        return $response;
-    }
+	if ( is_wp_error( $response ) ) {
+		do_action( 'woo_odoo_integration_create_guest_customer_failed', $response, $odoo_customer_data );
+		return $response;
+	}
 
-    // Parse Odoo response
-    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
-        $error = new WP_Error(
-            'odoo_create_guest_customer_failed',
-            __('Odoo API returned unexpected response format for guest customer', 'woo-odoo-integration'),
-            array('status' => 500, 'response' => $response)
-        );
+	// Parse Odoo response
+	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
+		$error = new WP_Error(
+			'odoo_create_guest_customer_failed',
+			__( 'Odoo API returned unexpected response format for guest customer', 'woo-odoo-integration' ),
+			array( 'status' => 500, 'response' => $response )
+		);
 
-        do_action('woo_odoo_integration_create_guest_customer_failed', $error, $guest_data);
-        return $error;
-    }
+		do_action( 'woo_odoo_integration_create_guest_customer_failed', $error, $guest_data );
+		return $error;
+	}
 
-    // Get created guest customer data
-    $created_customer = $response['data'][0];
+	// Get created guest customer data
+	$created_customer = $response['data'][0];
 
-    // Fire after create guest customer hook
-    do_action('woo_odoo_integration_after_create_guest_customer', $created_customer, $guest_data);
+	// Fire after create guest customer hook
+	do_action( 'woo_odoo_integration_after_create_guest_customer', $created_customer, $guest_data );
 
-    return $created_customer;
+	return $created_customer;
 }
 
 /**
@@ -987,18 +972,17 @@ function woo_odoo_integration_api_create_guest_customer($guest_data)
  *
  * @return   array|WP_Error           Customer data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_get_customer($customer_uuid)
-{
-    if (empty($customer_uuid)) {
-        return new WP_Error(
-            'missing_customer_uuid',
-            __('Customer UUID is required', 'woo-odoo-integration'),
-            array('status' => 400)
-        );
-    }
+function woo_odoo_integration_api_get_customer( $customer_uuid ) {
+	if ( empty( $customer_uuid ) ) {
+		return new WP_Error(
+			'missing_customer_uuid',
+			__( 'Customer UUID is required', 'woo-odoo-integration' ),
+			array( 'status' => 400 )
+		);
+	}
 
-    $endpoint = 'api/customers/' . sanitize_text_field($customer_uuid);
-    return woo_odoo_integration_api_get($endpoint);
+	$endpoint = 'api/customers/' . sanitize_text_field( $customer_uuid );
+	return woo_odoo_integration_api_get( $endpoint );
 }
 
 /**
@@ -1014,51 +998,50 @@ function woo_odoo_integration_api_get_customer($customer_uuid)
  *
  * @return   array|WP_Error          Countries data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_get_countries($force_refresh = false)
-{
-    $cache_key = 'woo_odoo_integration_countries';
+function woo_odoo_integration_api_get_countries( $force_refresh = false ) {
+	$cache_key = 'woo_odoo_integration_countries';
 
 
-    // Check if we should use cached data
-    if (!$force_refresh) {
-        $cached_countries = get_transient($cache_key);
+	// Check if we should use cached data
+	if ( ! $force_refresh ) {
+		$cached_countries = get_transient( $cache_key );
 
-        // Use cached data if available and not expired (cache for 24 hours)
-        if ($cached_countries !== false) {
-            return $cached_countries;
-        }
-    }
+		// Use cached data if available and not expired (cache for 24 hours)
+		if ( $cached_countries !== false ) {
+			return $cached_countries;
+		}
+	}
 
-    // Fetch countries from API
-    $response = woo_odoo_integration_api_get('api/countries', array('limit' => 250));
+	// Fetch countries from API
+	$response = woo_odoo_integration_api_get( 'api/countries', array( 'limit' => 250 ) );
 
-    if (is_wp_error($response)) {
-        // Return cached data if API fails and we have it
-        $cached_countries = get_option($cache_key, false);
-        if ($cached_countries !== false) {
-            $logger = \wc_get_logger();
-            $logger->warning('API failed, using cached countries data', array('source' => 'woo-odoo-countries'));
-            return $cached_countries;
-        }
+	if ( is_wp_error( $response ) ) {
+		// Return cached data if API fails and we have it
+		$cached_countries = get_option( $cache_key, false );
+		if ( $cached_countries !== false ) {
+			$logger = \wc_get_logger();
+			$logger->warning( 'API failed, using cached countries data', array( 'source' => 'woo-odoo-countries' ) );
+			return $cached_countries;
+		}
 
-        return $response;
-    }
+		return $response;
+	}
 
-    // Parse response
-    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
-        return new WP_Error(
-            'odoo_countries_api_error',
-            __('Odoo countries API returned unexpected response format', 'woo-odoo-integration'),
-            array('status' => 500, 'response' => $response)
-        );
-    }
+	// Parse response
+	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
+		return new WP_Error(
+			'odoo_countries_api_error',
+			__( 'Odoo countries API returned unexpected response format', 'woo-odoo-integration' ),
+			array( 'status' => 500, 'response' => $response )
+		);
+	}
 
-    $countries = $response['data'];
+	$countries = $response['data'];
 
-    // Cache the results for 24 hours
-    set_transient($cache_key, $countries, 24 * HOUR_IN_SECONDS);
+	// Cache the results for 24 hours
+	set_transient( $cache_key, $countries, 24 * HOUR_IN_SECONDS );
 
-    return $countries;
+	return $countries;
 }
 
 /**
@@ -1074,65 +1057,64 @@ function woo_odoo_integration_api_get_countries($force_refresh = false)
  *
  * @return   string|false                   Odoo country UUID on success, false if not found
  */
-function woo_odoo_integration_get_country_uuid($country_identifier)
-{
-    if (empty($country_identifier)) {
-        return false;
-    }
+function woo_odoo_integration_get_country_uuid( $country_identifier ) {
+	if ( empty( $country_identifier ) ) {
+		return false;
+	}
 
-    // Get countries from API (cached)
-    $countries = woo_odoo_integration_api_get_countries();
+	// Get countries from API (cached)
+	$countries = woo_odoo_integration_api_get_countries();
 
-    if (is_wp_error($countries)) {
-        $logger = \wc_get_logger();
-        $logger->error('Failed to get countries for mapping: ' . $countries->get_error_message(), array('source' => 'woo-odoo-countries'));
-        return false;
-    }
+	if ( is_wp_error( $countries ) ) {
+		$logger = \wc_get_logger();
+		$logger->error( 'Failed to get countries for mapping: ' . $countries->get_error_message(), array( 'source' => 'woo-odoo-countries' ) );
+		return false;
+	}
 
-    // First try to get full country name from WooCommerce if it's a country code
-    $wc_countries = new \WC_Countries();
-    $country_name = '';
+	// First try to get full country name from WooCommerce if it's a country code
+	$wc_countries = new \WC_Countries();
+	$country_name = '';
 
-    // If it looks like a country code (2-3 characters), get the full name
-    if (strlen($country_identifier) <= 3 && ctype_alpha($country_identifier)) {
-        $country_name = $wc_countries->get_countries()[$country_identifier] ?? '';
-    } else {
-        $country_name = $country_identifier;
-    }
+	// If it looks like a country code (2-3 characters), get the full name
+	if ( strlen( $country_identifier ) <= 3 && ctype_alpha( $country_identifier ) ) {
+		$country_name = $wc_countries->get_countries()[ $country_identifier ] ?? '';
+	} else {
+		$country_name = $country_identifier;
+	}
 
-    // Search for country in Odoo data
-    foreach ($countries as $country) {
-        // Direct name match (case insensitive)
-        if (strcasecmp($country['name'], $country_name) === 0) {
-            return $country['uuid'];
-        }
+	// Search for country in Odoo data
+	foreach ( $countries as $country ) {
+		// Direct name match (case insensitive)
+		if ( strcasecmp( $country['name'], $country_name ) === 0 ) {
+			return $country['uuid'];
+		}
 
-        // Also try direct match with the original identifier
-        if (strcasecmp($country['name'], $country_identifier) === 0) {
-            return $country['uuid'];
-        }
-    }
+		// Also try direct match with the original identifier
+		if ( strcasecmp( $country['name'], $country_identifier ) === 0 ) {
+			return $country['uuid'];
+		}
+	}
 
-    // If exact match not found, try partial matching for common variations
-    foreach ($countries as $country) {
-        $odoo_name = strtolower($country['name']);
-        $search_name = strtolower($country_name);
+	// If exact match not found, try partial matching for common variations
+	foreach ( $countries as $country ) {
+		$odoo_name = strtolower( $country['name'] );
+		$search_name = strtolower( $country_name );
 
-        // Check if names are similar (contains each other)
-        if (strpos($odoo_name, $search_name) !== false || strpos($search_name, $odoo_name) !== false) {
-            return $country['uuid'];
-        }
-    }
+		// Check if names are similar (contains each other)
+		if ( strpos( $odoo_name, $search_name ) !== false || strpos( $search_name, $odoo_name ) !== false ) {
+			return $country['uuid'];
+		}
+	}
 
-    // Log if country not found for debugging
-    $logger = \wc_get_logger();
-    $logger->debug(sprintf(
-        'Country not found in Odoo: "%s" (WC name: "%s")',
-        $country_identifier,
-        $country_name
-    ), array('source' => 'woo-odoo-countries'));
+	// Log if country not found for debugging
+	$logger = \wc_get_logger();
+	$logger->debug( sprintf(
+		'Country not found in Odoo: "%s" (WC name: "%s")',
+		$country_identifier,
+		$country_name
+	), array( 'source' => 'woo-odoo-countries' ) );
 
-    return false;
+	return false;
 }
 
 /**
@@ -1146,12 +1128,20 @@ function woo_odoo_integration_get_country_uuid($country_identifier)
  *
  * @return   bool    True if cache was cleared successfully
  */
-function woo_odoo_integration_clear_countries_cache()
-{
-    $result = delete_transient('woo_odoo_integration_countries');
+function woo_odoo_integration_clear_countries_cache() {
+	$result = delete_transient( 'woo_odoo_integration_countries' );
 
-    return $result;
+	return $result;
 }
+
+add_action( 'admin_init', function () {
+
+	if ( isset( $_GET['dylan'] ) ) :
+		woo_odoo_integration_api_get_product_stock();
+	endif;
+
+	return;
+} );
 
 /**
  * Get product stock from Odoo API
@@ -1169,47 +1159,52 @@ function woo_odoo_integration_clear_countries_cache()
  *
  * @return   array|WP_Error          Product stock data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_get_product_stock()
-{
-    // Fire before get product stock hook
-    do_action('woo_odoo_integration_before_get_product_stock');
+function woo_odoo_integration_api_get_product_stock() {
+	// Fire before get product stock hook
+	do_action( 'woo_odoo_integration_before_get_product_stock' );
 
-    $logger = wc_get_logger();
-    $logger->info('Starting product stock sync from Odoo', array('source' => 'woo-odoo-product-sync'));
+	$logger = wc_get_logger();
+	$logger->info( 'Starting product stock sync from Odoo', array( 'source' => 'woo-odoo-product-sync' ) );
 
-    // Make API request to get product stock
-    $response = woo_odoo_integration_api_get('api/product-stock');
+	// Make API request to get product stock
+	$response = woo_odoo_integration_api_get( 'api/product-stock' );
 
-    if (is_wp_error($response)) {
-        $logger->error('Failed to get product stock: ' . $response->get_error_message(), array('source' => 'woo-odoo-product-sync'));
-        do_action('woo_odoo_integration_get_product_stock_failed', $response);
-        return $response;
-    }
+	if ( is_wp_error( $response ) ) {
+		$logger->error( 'Failed to get product stock: ' . $response->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+		do_action( 'woo_odoo_integration_get_product_stock_failed', $response );
+		return $response;
+	}
 
-    // Parse Odoo response
-    if (!isset($response['code']) || 200 !== $response['code'] || empty($response['data'])) {
-        $error = new WP_Error(
-            'odoo_product_stock_api_error',
-            __('Odoo product stock API returned unexpected response format', 'woo-odoo-integration'),
-            array('status' => 500, 'response' => $response)
-        );
+	// Parse Odoo response
+	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
+		$error = new WP_Error(
+			'odoo_product_stock_api_error',
+			__( 'Odoo product stock API returned unexpected response format', 'woo-odoo-integration' ),
+			array( 'status' => 500, 'response' => $response )
+		);
 
-        $logger->error('Product stock API returned unexpected response format', array('source' => 'woo-odoo-product-sync'));
-        do_action('woo_odoo_integration_get_product_stock_failed', $error);
-        return $error;
-    }
+		$logger->error( 'Product stock API returned unexpected response format', array( 'source' => 'woo-odoo-product-sync' ) );
+		do_action( 'woo_odoo_integration_get_product_stock_failed', $error );
+		return $error;
+	}
 
-    $stock_data = $response['data'];
+	$stock_data = $response['data'];
 
-    // Apply filters to stock data
-    $stock_data = apply_filters('woo_odoo_integration_product_stock_data', $stock_data);
+	// Apply filters to stock data
+	$stock_data = apply_filters( 'woo_odoo_integration_product_stock_data', $stock_data );
 
-    // Fire after get product stock hook
-    do_action('woo_odoo_integration_after_get_product_stock', $stock_data);
+	// Log the stock data for debugging
+	$logger->debug( 'Retrieved product stock data from Odoo', array(
+		'source' => 'woo-odoo-product-sync',
+		'stock_data' => $stock_data
+	) );
 
-    $logger->info('Successfully retrieved product stock data', array('source' => 'woo-odoo-product-sync'));
+	// Fire after get product stock hook
+	do_action( 'woo_odoo_integration_after_get_product_stock', $stock_data );
 
-    return $stock_data;
+	$logger->info( 'Successfully retrieved product stock data', array( 'source' => 'woo-odoo-product-sync' ) );
+
+	return $stock_data;
 }
 
 /**
@@ -1231,178 +1226,177 @@ function woo_odoo_integration_api_get_product_stock()
  *
  * @return   array|WP_Error         Sync results on success, WP_Error on failure
  */
-function woo_odoo_integration_sync_product_stock($product_ids = array())
-{
-    $logger = wc_get_logger();
-    $logger->info('Starting product stock synchronization', array('source' => 'woo-odoo-product-sync'));
+function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
+	$logger = wc_get_logger();
+	$logger->info( 'Starting product stock synchronization', array( 'source' => 'woo-odoo-product-sync' ) );
 
-    // Fire before sync hook
-    do_action('woo_odoo_integration_before_sync_product_stock', $product_ids);
+	// Fire before sync hook
+	do_action( 'woo_odoo_integration_before_sync_product_stock', $product_ids );
 
-    // Get product stock from Odoo
-    $odoo_stock_data = woo_odoo_integration_api_get_product_stock();
+	// Get product stock from Odoo
+	$odoo_stock_data = woo_odoo_integration_api_get_product_stock();
 
-    if (is_wp_error($odoo_stock_data)) {
-        return $odoo_stock_data;
-    }
+	if ( is_wp_error( $odoo_stock_data ) ) {
+		return $odoo_stock_data;
+	}
 
-    $sync_results = array(
-        'updated' => 0,
-        'skipped' => 0,
-        'errors' => 0,
-        'details' => array()
-    );
+	$sync_results = array(
+		'updated' => 0,
+		'skipped' => 0,
+		'errors' => 0,
+		'details' => array()
+	);
 
-    // Create SKU to stock mapping from Odoo data
-    $sku_stock_map = array();
+	// Create SKU to stock mapping from Odoo data
+	$sku_stock_map = array();
 
-    foreach ($odoo_stock_data as $product_group) {
-        if (empty($product_group['variants'])) {
-            continue;
-        }
+	foreach ( $odoo_stock_data as $product_group ) {
+		if ( empty( $product_group['variants'] ) ) {
+			continue;
+		}
 
-        foreach ($product_group['variants'] as $variant) {
-            // Use variant UUID as SKU for mapping
-            if (!empty($variant['uuid'])) {
-                $sku = sanitize_text_field($variant['uuid']);
-                $quantity = floatval($variant['quantity']);
+		foreach ( $product_group['variants'] as $variant ) {
+			// Use variant UUID as SKU for mapping
+			if ( ! empty( $variant['uuid'] ) ) {
+				$sku = sanitize_text_field( $variant['uuid'] );
+				$quantity = floatval( $variant['quantity'] );
 
-                $sku_stock_map[$sku] = $quantity;
+				$sku_stock_map[ $sku ] = $quantity;
 
-                $logger->debug(sprintf(
-                    'Found SKU mapping: %s => %s (variant: %s)',
-                    $sku,
-                    $quantity,
-                    $variant['name']
-                ), array('source' => 'woo-odoo-product-sync'));
-            }
-        }
-    }
+				$logger->debug( sprintf(
+					'Found SKU mapping: %s => %s (variant: %s)',
+					$sku,
+					$quantity,
+					$variant['name']
+				), array( 'source' => 'woo-odoo-product-sync' ) );
+			}
+		}
+	}
 
-    if (empty($sku_stock_map)) {
-        $error = new WP_Error(
-            'no_sku_mappings',
-            __('No valid SKU mappings found in Odoo stock data', 'woo-odoo-integration')
-        );
-        $logger->warning('No valid SKU mappings found in Odoo stock data', array('source' => 'woo-odoo-product-sync'));
-        return $error;
-    }
+	if ( empty( $sku_stock_map ) ) {
+		$error = new WP_Error(
+			'no_sku_mappings',
+			__( 'No valid SKU mappings found in Odoo stock data', 'woo-odoo-integration' )
+		);
+		$logger->warning( 'No valid SKU mappings found in Odoo stock data', array( 'source' => 'woo-odoo-product-sync' ) );
+		return $error;
+	}
 
-    // Get WooCommerce products to sync
-    $args = array(
-        'post_type' => 'product',
-        'post_status' => 'publish',
-        'posts_per_page' => -1,
-        'meta_query' => array(
-            array(
-                'key' => '_sku',
-                'value' => '',
-                'compare' => '!='
-            )
-        )
-    );
+	// Get WooCommerce products to sync
+	$args = array(
+		'post_type' => 'product',
+		'post_status' => 'publish',
+		'posts_per_page' => -1,
+		'meta_query' => array(
+			array(
+				'key' => '_sku',
+				'value' => '',
+				'compare' => '!='
+			)
+		)
+	);
 
-    // If specific product IDs provided, filter by them
-    if (!empty($product_ids)) {
-        $args['post__in'] = array_map('intval', $product_ids);
-    }
+	// If specific product IDs provided, filter by them
+	if ( ! empty( $product_ids ) ) {
+		$args['post__in'] = array_map( 'intval', $product_ids );
+	}
 
-    $products = get_posts($args);
+	$products = get_posts( $args );
 
-    foreach ($products as $product_post) {
-        $product = wc_get_product($product_post->ID);
+	foreach ( $products as $product_post ) {
+		$product = wc_get_product( $product_post->ID );
 
-        if (!$product) {
-            $sync_results['errors']++;
-            continue;
-        }
+		if ( ! $product ) {
+			$sync_results['errors']++;
+			continue;
+		}
 
-        $sku = $product->get_sku();
+		$sku = $product->get_sku();
 
-        if (empty($sku)) {
-            $sync_results['skipped']++;
-            $sync_results['details'][] = sprintf(
-                __('Product %s skipped: No SKU', 'woo-odoo-integration'),
-                $product->get_name()
-            );
-            continue;
-        }
+		if ( empty( $sku ) ) {
+			$sync_results['skipped']++;
+			$sync_results['details'][] = sprintf(
+				__( 'Product %s skipped: No SKU', 'woo-odoo-integration' ),
+				$product->get_name()
+			);
+			continue;
+		}
 
-        // Check if we have stock data for this SKU
-        if (!isset($sku_stock_map[$sku])) {
-            $sync_results['skipped']++;
-            $sync_results['details'][] = sprintf(
-                __('Product %s (SKU: %s) skipped: No stock data from Odoo', 'woo-odoo-integration'),
-                $product->get_name(),
-                $sku
-            );
-            continue;
-        }
+		// Check if we have stock data for this SKU
+		if ( ! isset( $sku_stock_map[ $sku ] ) ) {
+			$sync_results['skipped']++;
+			$sync_results['details'][] = sprintf(
+				__( 'Product %s (SKU: %s) skipped: No stock data from Odoo', 'woo-odoo-integration' ),
+				$product->get_name(),
+				$sku
+			);
+			continue;
+		}
 
-        $new_stock = intval($sku_stock_map[$sku]);
-        $old_stock = $product->get_stock_quantity();
+		$new_stock = intval( $sku_stock_map[ $sku ] );
+		$old_stock = $product->get_stock_quantity();
 
-        // Update stock quantity
-        $product->set_stock_quantity($new_stock);
-        $product->set_manage_stock(true);
+		// Update stock quantity
+		$product->set_stock_quantity( $new_stock );
+		$product->set_manage_stock( true );
 
-        // Set stock status based on quantity
-        if ($new_stock > 0) {
-            $product->set_stock_status('instock');
-        } else {
-            $product->set_stock_status('outofstock');
-        }
+		// Set stock status based on quantity
+		if ( $new_stock > 0 ) {
+			$product->set_stock_status( 'instock' );
+		} else {
+			$product->set_stock_status( 'outofstock' );
+		}
 
-        // Save product
-        $result = $product->save();
+		// Save product
+		$result = $product->save();
 
-        if ($result) {
-            $sync_results['updated']++;
-            $sync_results['details'][] = sprintf(
-                __('Product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration'),
-                $product->get_name(),
-                $sku,
-                $old_stock,
-                $new_stock
-            );
+		if ( $result ) {
+			$sync_results['updated']++;
+			$sync_results['details'][] = sprintf(
+				__( 'Product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration' ),
+				$product->get_name(),
+				$sku,
+				$old_stock,
+				$new_stock
+			);
 
-            // Fire product stock updated hook
-            do_action('woo_odoo_integration_product_stock_updated', $product->get_id(), $old_stock, $new_stock);
+			// Fire product stock updated hook
+			do_action( 'woo_odoo_integration_product_stock_updated', $product->get_id(), $old_stock, $new_stock );
 
-            $logger->info(sprintf(
-                'Updated product stock: %s (SKU: %s) from %d to %d',
-                $product->get_name(),
-                $sku,
-                $old_stock,
-                $new_stock
-            ), array('source' => 'woo-odoo-product-sync'));
-        } else {
-            $sync_results['errors']++;
-            $sync_results['details'][] = sprintf(
-                __('Product %s (SKU: %s) failed to update', 'woo-odoo-integration'),
-                $product->get_name(),
-                $sku
-            );
+			$logger->info( sprintf(
+				'Updated product stock: %s (SKU: %s) from %d to %d',
+				$product->get_name(),
+				$sku,
+				$old_stock,
+				$new_stock
+			), array( 'source' => 'woo-odoo-product-sync' ) );
+		} else {
+			$sync_results['errors']++;
+			$sync_results['details'][] = sprintf(
+				__( 'Product %s (SKU: %s) failed to update', 'woo-odoo-integration' ),
+				$product->get_name(),
+				$sku
+			);
 
-            $logger->error(sprintf(
-                'Failed to update product stock: %s (SKU: %s)',
-                $product->get_name(),
-                $sku
-            ), array('source' => 'woo-odoo-product-sync'));
-        }
-    }
+			$logger->error( sprintf(
+				'Failed to update product stock: %s (SKU: %s)',
+				$product->get_name(),
+				$sku
+			), array( 'source' => 'woo-odoo-product-sync' ) );
+		}
+	}
 
-    // Fire after sync hook
-    do_action('woo_odoo_integration_after_sync_product_stock', $sync_results);
+	// Fire after sync hook
+	do_action( 'woo_odoo_integration_after_sync_product_stock', $sync_results );
 
-    $logger->info(sprintf(
-        'Product stock sync completed. Updated: %d, Skipped: %d, Errors: %d',
-        $sync_results['updated'],
-        $sync_results['skipped'],
-        $sync_results['errors']
-    ), array('source' => 'woo-odoo-product-sync'));
+	$logger->info( sprintf(
+		'Product stock sync completed. Updated: %d, Skipped: %d, Errors: %d',
+		$sync_results['updated'],
+		$sync_results['skipped'],
+		$sync_results['errors']
+	), array( 'source' => 'woo-odoo-product-sync' ) );
 
-    return $sync_results;
+	return $sync_results;
 }
 
 /**
@@ -1419,90 +1413,89 @@ function woo_odoo_integration_sync_product_stock($product_ids = array())
  *
  * @return   array|WP_Error           Updated customer data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_update_customer($customer_uuid, $customer_data)
-{
-    if (empty($customer_uuid)) {
-        return new WP_Error(
-            'missing_customer_uuid',
-            __('Customer UUID is required for update', 'woo-odoo-integration'),
-            array('status' => 400)
-        );
-    }
+function woo_odoo_integration_api_update_customer( $customer_uuid, $customer_data ) {
+	if ( empty( $customer_uuid ) ) {
+		return new WP_Error(
+			'missing_customer_uuid',
+			__( 'Customer UUID is required for update', 'woo-odoo-integration' ),
+			array( 'status' => 400 )
+		);
+	}
 
-    // Sanitize and validate customer data
-    $sanitized_data = array();
-    $allowed_fields = array(
-        'name',
-        'email',
-        'street',
-        'street2',
-        'city',
-        'zip',
-        'vat',
-        'phone',
-        'mobile',
-        'country_id'
-    );
+	// Sanitize and validate customer data
+	$sanitized_data = array();
+	$allowed_fields = array(
+		'name',
+		'email',
+		'street',
+		'street2',
+		'city',
+		'zip',
+		'vat',
+		'phone',
+		'mobile',
+		'country_id'
+	);
 
-    foreach ($allowed_fields as $field) {
-        if (isset($customer_data[$field])) {
-            switch ($field) {
-                case 'email':
-                    if (!empty($customer_data[$field])) {
-                        $sanitized_data[$field] = sanitize_email($customer_data[$field]);
-                    }
-                    break;
-                case 'zip':
-                case 'vat':
-                    // Handle numeric fields
-                    if (!empty($customer_data[$field])) {
-                        $sanitized_data[$field] = is_numeric($customer_data[$field])
-                            ? intval($customer_data[$field])
-                            : sanitize_text_field($customer_data[$field]);
-                    }
-                    break;
-                case 'country_id':
-                    // Handle country UUID field - should remain as string
-                    if (!empty($customer_data[$field])) {
-                        $sanitized_data[$field] = sanitize_text_field($customer_data[$field]);
-                    }
-                    break;
-                default:
-                    if (!empty($customer_data[$field])) {
-                        $sanitized_data[$field] = sanitize_text_field($customer_data[$field]);
-                    }
-                    break;
-            }
-        }
-    }
+	foreach ( $allowed_fields as $field ) {
+		if ( isset( $customer_data[ $field ] ) ) {
+			switch ( $field ) {
+				case 'email':
+					if ( ! empty( $customer_data[ $field ] ) ) {
+						$sanitized_data[ $field ] = sanitize_email( $customer_data[ $field ] );
+					}
+					break;
+				case 'zip':
+				case 'vat':
+					// Handle numeric fields
+					if ( ! empty( $customer_data[ $field ] ) ) {
+						$sanitized_data[ $field ] = is_numeric( $customer_data[ $field ] )
+							? intval( $customer_data[ $field ] )
+							: sanitize_text_field( $customer_data[ $field ] );
+					}
+					break;
+				case 'country_id':
+					// Handle country UUID field - should remain as string
+					if ( ! empty( $customer_data[ $field ] ) ) {
+						$sanitized_data[ $field ] = sanitize_text_field( $customer_data[ $field ] );
+					}
+					break;
+				default:
+					if ( ! empty( $customer_data[ $field ] ) ) {
+						$sanitized_data[ $field ] = sanitize_text_field( $customer_data[ $field ] );
+					}
+					break;
+			}
+		}
+	}
 
-    // Ensure we have some data to update
-    if (empty($sanitized_data)) {
-        return new WP_Error(
-            'no_update_data',
-            __('No valid data provided for customer update', 'woo-odoo-integration'),
-            array('status' => 400)
-        );
-    }
+	// Ensure we have some data to update
+	if ( empty( $sanitized_data ) ) {
+		return new WP_Error(
+			'no_update_data',
+			__( 'No valid data provided for customer update', 'woo-odoo-integration' ),
+			array( 'status' => 400 )
+		);
+	}
 
-    // Make PUT request to update customer
-    $endpoint = 'api/customers/' . sanitize_text_field($customer_uuid);
-    $response = woo_odoo_integration_api_put($endpoint, $sanitized_data);
+	// Make PUT request to update customer
+	$endpoint = 'api/customers/' . sanitize_text_field( $customer_uuid );
+	$response = woo_odoo_integration_api_put( $endpoint, $sanitized_data );
 
-    if (is_wp_error($response)) {
-        return $response;
-    }
+	if ( is_wp_error( $response ) ) {
+		return $response;
+	}
 
-    // Handle the response format: { "code": 200, "data": [...] }
-    if (isset($response['code']) && 200 === $response['code'] && isset($response['data'])) {
-        // Return the first customer data from the response
-        if (is_array($response['data']) && !empty($response['data'])) {
-            return $response['data'][0];
-        }
-    }
+	// Handle the response format: { "code": 200, "data": [...] }
+	if ( isset( $response['code'] ) && 200 === $response['code'] && isset( $response['data'] ) ) {
+		// Return the first customer data from the response
+		if ( is_array( $response['data'] ) && ! empty( $response['data'] ) ) {
+			return $response['data'][0];
+		}
+	}
 
-    // Fallback: return the whole response if format is different
-    return $response;
+	// Fallback: return the whole response if format is different
+	return $response;
 }
 
 /**
@@ -1519,76 +1512,137 @@ function woo_odoo_integration_api_update_customer($customer_uuid, $customer_data
  *
  * @return   array|WP_Error           Odoo customer data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_sync_customer($wc_customer_id, $force_update = false)
-{
-    // Validate customer ID
-    if (!is_numeric($wc_customer_id) || $wc_customer_id <= 0) {
-        return new WP_Error(
-            'invalid_customer_id',
-            __('Invalid WooCommerce customer ID provided', 'woo-odoo-integration'),
-            array('status' => 400)
-        );
-    }
+function woo_odoo_integration_api_sync_customer( $wc_customer_id, $force_update = false ) {
+	// Validate customer ID
+	if ( ! is_numeric( $wc_customer_id ) || $wc_customer_id <= 0 ) {
+		return new WP_Error(
+			'invalid_customer_id',
+			__( 'Invalid WooCommerce customer ID provided', 'woo-odoo-integration' ),
+			array( 'status' => 400 )
+		);
+	}
 
-    // Get WooCommerce customer
-    $wc_customer = new WC_Customer($wc_customer_id);
-    if (!$wc_customer->get_id()) {
-        return new WP_Error(
-            'customer_not_found',
-            __('WooCommerce customer not found', 'woo-odoo-integration'),
-            array('status' => 404)
-        );
-    }
+	// Get WooCommerce customer
+	$wc_customer = new WC_Customer( $wc_customer_id );
+	if ( ! $wc_customer->get_id() ) {
+		return new WP_Error(
+			'customer_not_found',
+			__( 'WooCommerce customer not found', 'woo-odoo-integration' ),
+			array( 'status' => 404 )
+		);
+	}
 
-    // Check if customer is already synced (unless forcing update)
-    $odoo_customer_uuid = get_user_meta($wc_customer_id, '_odoo_customer_uuid', true);
-    if (!empty($odoo_customer_uuid) && !$force_update) {
-        // Customer already exists in Odoo, return existing data
-        return woo_odoo_integration_api_get_customer($odoo_customer_uuid);
-    }
+	// Check if customer is already synced (unless forcing update)
+	$odoo_customer_uuid = get_user_meta( $wc_customer_id, '_odoo_customer_uuid', true );
+	if ( ! empty( $odoo_customer_uuid ) && ! $force_update ) {
+		// Customer already exists in Odoo, return existing data
+		return woo_odoo_integration_api_get_customer( $odoo_customer_uuid );
+	}
 
-    // Prepare customer data for Odoo
-    $billing_address = array(
-        'street' => $wc_customer->get_billing_address_1(),
-        'street2' => $wc_customer->get_billing_address_2(),
-        'city' => $wc_customer->get_billing_city(),
-        'zip' => $wc_customer->get_billing_postcode(),
-    );
+	// Prepare customer data for Odoo
+	$billing_address = array(
+		'street' => $wc_customer->get_billing_address_1(),
+		'street2' => $wc_customer->get_billing_address_2(),
+		'city' => $wc_customer->get_billing_city(),
+		'zip' => $wc_customer->get_billing_postcode(),
+	);
 
-    // Map WooCommerce country to Odoo country UUID
-    $wc_country = $wc_customer->get_billing_country();
-    $odoo_country_uuid = woo_odoo_integration_get_country_uuid($wc_country);
+	// Map WooCommerce country to Odoo country UUID
+	$wc_country = $wc_customer->get_billing_country();
+	$odoo_country_uuid = woo_odoo_integration_get_country_uuid( $wc_country );
 
-    if ($odoo_country_uuid) {
-        $billing_address['country_id'] = $odoo_country_uuid;
-    }
+	if ( $odoo_country_uuid ) {
+		$billing_address['country_id'] = $odoo_country_uuid;
+	}
 
-    $customer_data = array(
-        'name' => trim($wc_customer->get_first_name() . ' ' . $wc_customer->get_last_name()),
-        'email' => $wc_customer->get_email(),
-        'phone' => $wc_customer->get_billing_phone(),
-        'mobile' => $wc_customer->get_billing_phone(), // Use same phone for mobile
-    );
+	$customer_data = array(
+		'name' => trim( $wc_customer->get_first_name() . ' ' . $wc_customer->get_last_name() ),
+		'email' => $wc_customer->get_email(),
+		'phone' => $wc_customer->get_billing_phone(),
+		'mobile' => $wc_customer->get_billing_phone(), // Use same phone for mobile
+	);
 
-    // Add billing address data
-    $customer_data = array_merge($customer_data, $billing_address);
+	// Add billing address data
+	$customer_data = array_merge( $customer_data, $billing_address );
 
-    // Create or update customer in Odoo
-    if (!empty($odoo_customer_uuid) && $force_update) {
-        // Update existing customer
-        $result = woo_odoo_integration_api_update_customer($odoo_customer_uuid, $customer_data);
+	// Create or update customer in Odoo
+	if ( ! empty( $odoo_customer_uuid ) && $force_update ) {
+		// Update existing customer
+		$result = woo_odoo_integration_api_update_customer( $odoo_customer_uuid, $customer_data );
 
-        if (!is_wp_error($result)) {
-            // Update sync timestamp for successful update
-            update_user_meta($wc_customer_id, '_odoo_last_sync', current_time('timestamp'));
+		if ( ! is_wp_error( $result ) ) {
+			// Update sync timestamp for successful update
+			update_user_meta( $wc_customer_id, '_odoo_last_sync', current_time( 'timestamp' ) );
 
-            // Fire after update customer hook
-            do_action('woo_odoo_integration_after_update_customer', $result, $wc_customer_id);
-        }
+			// Fire after update customer hook
+			do_action( 'woo_odoo_integration_after_update_customer', $result, $wc_customer_id );
+		}
 
-        return $result;
-    } else {
-        // Create new customer
-        return woo_odoo_integration_api_create_customer($customer_data, $wc_customer_id);
-    }
+		return $result;
+	} else {
+		// Create new customer
+		return woo_odoo_integration_api_create_customer( $customer_data, $wc_customer_id );
+	}
+}
+
+add_action( 'admin_init', function () {
+
+	if ( isset( $_GET['dylan'] ) ) :
+		$data = woo_odoo_integration_api_get_product_groups();
+		do_action( 'qm/info', [ 
+			'data' => $data,
+		] );
+	endif;
+} );
+
+/**
+ * Get product groups from Odoo API (with chunk/pagination)
+ *
+ * Melakukan request ke endpoint /api/product-groups untuk mengambil data produk dari Odoo.
+ * Mendukung parameter page dan limit untuk chunking/pagination.
+ *
+ * @since 1.0.0
+ * @access public
+ *
+ * @param int $page Halaman yang diambil (default: 1)
+ * @param int $limit Jumlah data per halaman (default: 80)
+ *
+ * @return array|WP_Error Data produk dari Odoo, atau WP_Error jika gagal
+ */
+function woo_odoo_integration_api_get_product_groups( $page = 1, $limit = 80 ) {
+	$endpoint = 'api/product-groups';
+
+	// Query args untuk GET request
+	$query_args = array(
+		'page' => intval( $page ),
+		'limit' => intval( $limit ),
+	);
+
+	// Gunakan helper API GET agar token otomatis
+	$response = woo_odoo_integration_api_get( $endpoint, $query_args );
+
+	if ( is_wp_error( $response ) ) {
+		do_action( 'woo_odoo_integration_get_product_groups_failed', $response, $query_args );
+		return $response;
+	}
+
+	// Validasi response
+	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
+		$error = new WP_Error(
+			'odoo_product_groups_api_error',
+			__( 'Odoo product groups API returned unexpected response format', 'woo-odoo-integration' ),
+			array( 'status' => 500, 'response' => $response )
+		);
+		do_action( 'woo_odoo_integration_get_product_groups_failed', $error, $query_args );
+		return $error;
+	}
+
+	// Data produk
+	$product_groups = $response['data'];
+	// Filter hook untuk modifikasi data jika perlu
+	$product_groups = apply_filters( 'woo_odoo_integration_product_groups_data', $product_groups, $page, $limit );
+
+	do_action( 'woo_odoo_integration_after_get_product_groups', $product_groups, $page, $limit );
+
+	return $product_groups;
 }
