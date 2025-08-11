@@ -2,10 +2,10 @@
 /**
  * WooCommerce Odoo Integration - Product Sync CLI Command
  *
- * This CLI command allows manual triggering of WooCommerce <-> Odoo product stock sync via WP-CLI.
+ * This CLI command allows manual triggering of WooCommerce <-> Odoo product sync (create/update) via WP-CLI.
  *
  * Usage:
- *   wp woo-odoo sync-products [--chunk_size=<n>] [--interval=<minutes>]
+ *   wp woo-odoo sync-products [--page=<n>] [--limit=<n>]
  *
  * @package Woo_Odoo_Integration
  */
@@ -15,47 +15,45 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 }
 
 /**
- * CLI commands for WooCommerce Odoo Integration product sync.
+ * CLI commands for WooCommerce Odoo Integration product sync (create/update).
  */
 class Woo_Odoo_Integration_CLI_Product_Sync {
 	/**
-	 * Manual trigger for product stock sync from WooCommerce to Odoo.
+	 * Manual trigger for product sync from Odoo to WooCommerce (create/update).
 	 *
 	 * ## OPTIONS
 	 *
-	 * [--chunk_size=<n>]
-	 * : Number of products per batch (default: 10)
+	 * [--page=<n>]
+	 * : Page number for Odoo API pagination (default: 1)
 	 *
-	 * [--interval=<minutes>]
-	 * : Interval between batches in minutes (default: 5)
+	 * [--limit=<n>]
+	 * : Number of products per page (default: 80)
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp woo-odoo sync-products --chunk_size=20 --interval=2
+	 *     wp woo-odoo sync-products --page=1 --limit=100
 	 *
 	 */
 	public function sync_products( $args, $assoc_args ) {
-		$chunk_size = isset( $assoc_args['chunk_size'] ) ? intval( $assoc_args['chunk_size'] ) : 10;
-		$interval = isset( $assoc_args['interval'] ) ? intval( $assoc_args['interval'] ) : 5;
+		$page = isset( $assoc_args['page'] ) ? intval( $assoc_args['page'] ) : 1;
+		$limit = isset( $assoc_args['limit'] ) ? intval( $assoc_args['limit'] ) : 80;
 
-		WP_CLI::log( sprintf( 'Starting product sync: chunk_size=%d, interval=%d', $chunk_size, $interval ) );
+		WP_CLI::log( sprintf( 'Starting product sync: page=%d, limit=%d', $page, $limit ) );
 
-		// Optionally override chunk settings for this run only.
-		update_option( 'woo_odoo_auto_sync_chunk_size', $chunk_size );
-		update_option( 'woo_odoo_auto_sync_chunk_interval', $interval );
-
+		if ( ! function_exists( 'woo_odoo_integration_api_get_product_groups' ) ) {
+			require_once dirname( __DIR__ ) . '/helper/api.php';
+		}
 		if ( ! class_exists( 'Woo_Odoo_Integration_Scheduler' ) ) {
 			require_once dirname( __DIR__ ) . '/includes/class-woo-odoo-integration-scheduler.php';
 		}
 
-		$scheduler = new Woo_Odoo_Integration_Scheduler( 'woo-odoo-integration', WOO_ODOO_INTEGRATION_VERSION );
-
-		// Terminate sync in progress if any
-		$current_status = $scheduler->get_sync_status();
-		if ( $current_status && isset( $current_status['status'] ) && $current_status['status'] === 'in_progress' ) {
-			WP_CLI::warning( 'A sync is currently in progress. Terminating previous sync...' );
-			$scheduler->clear_sync_queue();
+		$product_groups = woo_odoo_integration_api_get_product_groups( $page, $limit );
+		if ( is_wp_error( $product_groups ) ) {
+			WP_CLI::error( 'Failed to fetch product groups from Odoo: ' . $product_groups->get_error_message() );
+			return;
 		}
+
+		$scheduler = new Woo_Odoo_Integration_Scheduler( 'woo-odoo-integration', WOO_ODOO_INTEGRATION_VERSION );
 
 		// Overwrite logger to also output to WP_CLI
 		add_filter( 'woo_odoo_integration_cli_log_product', function ($msg) {
@@ -63,13 +61,10 @@ class Woo_Odoo_Integration_CLI_Product_Sync {
 			return $msg;
 		} );
 
-		$result = $scheduler->force_start_sync( true );
+		$results = $scheduler->sync_odoo_products_to_wc( $product_groups );
 
-		if ( is_wp_error( $result ) ) {
-			WP_CLI::error( $result->get_error_message() );
-		} else {
-			WP_CLI::success( 'Product sync triggered successfully.' );
-		}
+		WP_CLI::success( sprintf( 'Product sync completed. Created: %d, Updated: %d, Skipped: %d, Errors: %d',
+			$results['created'], $results['updated'], $results['skipped'], $results['errors'] ) );
 	}
 }
 
