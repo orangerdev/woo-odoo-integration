@@ -18,9 +18,8 @@
  */
 
 // Prevent direct access
-if ( ! defined( 'ABSPATH' ) ) {
+if ( ! defined( 'ABSPATH' ) )
 	exit;
-}
 
 class Woo_Odoo_Integration_Scheduler {
 	/**
@@ -637,4 +636,270 @@ class Woo_Odoo_Integration_Scheduler {
 			$this->chunk_interval
 		), array( 'source' => 'woo-odoo-scheduler' ) );
 	}
+	// ...existing code...
+	/**
+	 * Sync Odoo products to WooCommerce
+	 *
+	 * Mendapatkan data produk dari Odoo, lalu insert/update ke WooCommerce (variable/simple, gambar, meta, kategori, dsb)
+	 *
+	 * @since 1.0.0
+	 * @access public
+	 *
+	 * @param array $product_groups   Data produk Odoo (hasil dari woo_odoo_integration_api_get_product_groups)
+	 * @return array   Hasil proses sync (jumlah updated, created, error, log detail)
+	 */
+	public function sync_odoo_products_to_wc( $product_groups ) {
+		$logger = $this->get_logger();
+		$results = array(
+			'created' => 0,
+			'updated' => 0,
+			'skipped' => 0,
+			'errors' => 0,
+			'details' => array(),
+		);
+
+		// Mapping attribute Odoo ke WooCommerce (bisa diubah via filter)
+		$attribute_map = apply_filters( 'woo_odoo_integration_product_attribute_map', array(
+			'type_id' => 'Type',
+			'material_id' => 'Material',
+			'color_id' => 'Color',
+			'size_id' => 'Size',
+			'location' => 'Location',
+		) );
+
+		if ( $logger ) {
+			$logger->info( 'Sync Odoo products to WooCommerce started', array( 'source' => 'woo-odoo-product-sync' ) );
+		}
+
+		if ( ! is_array( $product_groups ) || empty( $product_groups ) ) {
+			$results['errors']++;
+			$results['details'][] = array( 'error' => 'No product groups data received from Odoo.' );
+			if ( $logger ) {
+				$logger->error( 'No product groups data received from Odoo.', array( 'source' => 'woo-odoo-product-sync' ) );
+			}
+			return $results;
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+
+		foreach ( $product_groups as $group ) {
+			$uuid = isset( $group['uuid'] ) ? $group['uuid'] : '';
+			if ( empty( $uuid ) ) {
+				$results['skipped']++;
+				$results['details'][] = array( 'skipped' => 'Missing UUID', 'group' => $group );
+				continue;
+			}
+
+			// Cek produk berdasarkan SKU (UUID)
+			$product_id = wc_get_product_id_by_sku( $uuid );
+			$is_update = false;
+			$product = false;
+
+			if ( $product_id ) {
+				$product = wc_get_product( $product_id );
+				$is_update = true;
+			} else {
+				// Buat produk baru (default simple, bisa diubah ke variable jika ada variasi)
+				$product = new WC_Product_Simple();
+				$product->set_sku( $uuid );
+			}
+
+			// Set nama produk
+			if ( isset( $group['name'] ) ) {
+				$product->set_name( $group['name'] );
+			}
+
+			// Set deskripsi
+			if ( isset( $group['description'] ) ) {
+				$product->set_description( $group['description'] );
+			}
+			if ( isset( $group['short_description'] ) ) {
+				$product->set_short_description( $group['short_description'] );
+			}
+
+			// Set harga
+			if ( isset( $group['price'] ) ) {
+				$product->set_regular_price( $group['price'] );
+			}
+
+			// Set stok
+			if ( isset( $group['stock_quantity'] ) ) {
+				$product->set_manage_stock( true );
+				$product->set_stock_quantity( $group['stock_quantity'] );
+			}
+
+			// Set kategori (by name, create if not exist)
+			if ( isset( $group['category'] ) && ! empty( $group['category'] ) ) {
+				$cat_name = $group['category'];
+				$term = get_term_by( 'name', $cat_name, 'product_cat' );
+				if ( ! $term ) {
+					$term = wp_insert_term( $cat_name, 'product_cat' );
+					if ( is_wp_error( $term ) ) {
+						$results['errors']++;
+						$results['details'][] = array( 'error' => 'Failed to create category', 'category' => $cat_name, 'msg' => $term->get_error_message() );
+						if ( $logger ) {
+							$logger->error( 'Failed to create category: ' . $cat_name . ' - ' . $term->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+						}
+						continue;
+					}
+					$term_id = $term['term_id'];
+				} else {
+					$term_id = $term->term_id;
+				}
+				$product->set_category_ids( array( $term_id ) );
+			}
+
+			// Set gambar utama (featured image)
+			if ( isset( $group['image'] ) && ! empty( $group['image'] ) ) {
+				$image_url = $group['image'];
+				$attach_id = $this->maybe_sideload_image( $image_url, $product_id ? $product_id : 0 );
+				if ( $attach_id ) {
+					$product->set_image_id( $attach_id );
+				}
+			}
+
+			// Set gallery images
+			if ( isset( $group['gallery'] ) && is_array( $group['gallery'] ) ) {
+				$gallery_ids = array();
+				foreach ( $group['gallery'] as $img_url ) {
+					$attach_id = $this->maybe_sideload_image( $img_url, $product_id ? $product_id : 0 );
+					if ( $attach_id ) {
+						$gallery_ids[] = $attach_id;
+					}
+				}
+				if ( ! empty( $gallery_ids ) ) {
+					$product->set_gallery_image_ids( $gallery_ids );
+				}
+			}
+
+			// Set attributes (menggunakan filter mapping)
+			$attributes = array();
+			foreach ( $attribute_map as $odoo_key => $wc_label ) {
+				if ( isset( $group[ $odoo_key ] ) && ! empty( $group[ $odoo_key ] ) ) {
+					$attr_value = $group[ $odoo_key ];
+					$taxonomy = wc_sanitize_taxonomy_name( $wc_label );
+					// Pastikan attribute terdaftar di WooCommerce
+					if ( ! taxonomy_exists( 'pa_' . $taxonomy ) ) {
+						// Register attribute (if not exist)
+						wc_create_attribute( array( 'name' => $wc_label, 'slug' => $taxonomy, 'type' => 'select', 'order_by' => 'menu_order', 'has_archives' => false ) );
+						register_taxonomy( 'pa_' . $taxonomy, 'product', array( 'hierarchical' => false ) );
+					}
+					// Set attribute value (create term if not exist)
+					$term = get_term_by( 'name', $attr_value, 'pa_' . $taxonomy );
+					if ( ! $term ) {
+						$term = wp_insert_term( $attr_value, 'pa_' . $taxonomy );
+						if ( is_wp_error( $term ) ) {
+							$results['errors']++;
+							$results['details'][] = array( 'error' => 'Failed to create attribute term', 'attribute' => $wc_label, 'value' => $attr_value, 'msg' => $term->get_error_message() );
+							if ( $logger ) {
+								$logger->error( 'Failed to create attribute term: ' . $wc_label . ' - ' . $attr_value . ' - ' . $term->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+							}
+							continue;
+						}
+						$term_id = $term['term_id'];
+					} else {
+						$term_id = $term->term_id;
+					}
+					wp_set_object_terms( $product->get_id(), $attr_value, 'pa_' . $taxonomy, true );
+					$attributes[ 'pa_' . $taxonomy ] = array(
+						'name' => 'pa_' . $taxonomy,
+						'value' => $attr_value,
+						'is_visible' => 1,
+						'is_variation' => 0,
+						'is_taxonomy' => 1,
+					);
+				}
+			}
+			if ( ! empty( $attributes ) ) {
+				$product->set_attributes( $attributes );
+			}
+
+			// Set meta data (custom fields)
+			if ( isset( $group['meta'] ) && is_array( $group['meta'] ) ) {
+				foreach ( $group['meta'] as $meta_key => $meta_value ) {
+					$product->update_meta_data( $meta_key, $meta_value );
+				}
+			}
+
+			// Save product
+			try {
+				$product_id_saved = $product->save();
+				if ( $is_update ) {
+					$results['updated']++;
+					$results['details'][] = array( 'updated' => $uuid, 'product_id' => $product_id_saved );
+					if ( $logger ) {
+						$logger->info( 'Updated product: ' . $uuid, array( 'source' => 'woo-odoo-product-sync', 'product_id' => $product_id_saved ) );
+					}
+				} else {
+					$results['created']++;
+					$results['details'][] = array( 'created' => $uuid, 'product_id' => $product_id_saved );
+					if ( $logger ) {
+						$logger->info( 'Created product: ' . $uuid, array( 'source' => 'woo-odoo-product-sync', 'product_id' => $product_id_saved ) );
+					}
+				}
+			} catch (Exception $e) {
+				$results['errors']++;
+				$results['details'][] = array( 'error' => 'Failed to save product', 'uuid' => $uuid, 'msg' => $e->getMessage() );
+				if ( $logger ) {
+					$logger->error( 'Failed to save product: ' . $uuid . ' - ' . $e->getMessage(), array( 'source' => 'woo-odoo-product-sync' ) );
+				}
+			}
+		}
+
+		if ( $logger ) {
+			$logger->info( 'Sync Odoo products to WooCommerce completed', array( 'source' => 'woo-odoo-product-sync', 'result' => $results ) );
+		}
+
+		return $results;
+
+	}
+
+	/**
+	 * Download and sideload image if not already in media library
+	 *
+	 * @param string $image_url
+	 * @param int $post_id
+	 * @return int|false Attachment ID or false
+	 */
+	private function maybe_sideload_image( $image_url, $post_id = 0 ) {
+		if ( empty( $image_url ) ) {
+			return false;
+		}
+		// Check if image already exists in media library by URL
+		$attachment_id = $this->get_attachment_id_by_url( $image_url );
+		if ( $attachment_id ) {
+			return $attachment_id;
+		}
+		// Download and sideload
+		$tmp = download_url( $image_url );
+		if ( is_wp_error( $tmp ) ) {
+			return false;
+		}
+		$file_array = array(
+			'name' => basename( $image_url ),
+			'tmp_name' => $tmp,
+		);
+		$attach_id = media_handle_sideload( $file_array, $post_id );
+		if ( is_wp_error( $attach_id ) ) {
+			@unlink( $tmp );
+			return false;
+		}
+		return $attach_id;
+	}
+
+	/**
+	 * Get attachment ID by URL
+	 *
+	 * @param string $image_url
+	 * @return int|false
+	 */
+	private function get_attachment_id_by_url( $image_url ) {
+		global $wpdb;
+		$query = $wpdb->prepare( "SELECT ID FROM $wpdb->posts WHERE guid=%s AND post_type='attachment'", $image_url );
+		$id = $wpdb->get_var( $query );
+		return $id ? intval( $id ) : false;
+	}
 }
+
