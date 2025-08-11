@@ -49,7 +49,21 @@ class Woo_Odoo_Integration_CLI_Product_Sync {
 		}
 
 		$scheduler = new Woo_Odoo_Integration_Scheduler( 'woo-odoo-integration', WOO_ODOO_INTEGRATION_VERSION );
-		$result = $scheduler->force_start_sync();
+
+		// Terminate sync in progress if any
+		$current_status = $scheduler->get_sync_status();
+		if ( $current_status && isset( $current_status['status'] ) && $current_status['status'] === 'in_progress' ) {
+			WP_CLI::warning( 'A sync is currently in progress. Terminating previous sync...' );
+			$scheduler->clear_sync_queue();
+		}
+
+		// Overwrite logger to also output to WP_CLI
+		add_filter( 'woo_odoo_integration_cli_log_product', function ($msg) {
+			\WP_CLI::log( $msg );
+			return $msg;
+		} );
+
+		$result = $scheduler->force_start_sync( true );
 
 		if ( is_wp_error( $result ) ) {
 			WP_CLI::error( $result->get_error_message() );
