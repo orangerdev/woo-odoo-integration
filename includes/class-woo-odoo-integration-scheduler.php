@@ -692,17 +692,26 @@ class Woo_Odoo_Integration_Scheduler {
 				continue;
 			}
 
+
 			// Cek produk berdasarkan SKU (UUID)
 			$product_id = wc_get_product_id_by_sku( $uuid );
 			$is_update = false;
 			$product = false;
+			$is_variable = ( isset( $group['variants'] ) && is_array( $group['variants'] ) && count( $group['variants'] ) > 0 );
 
 			if ( $product_id ) {
 				$product = wc_get_product( $product_id );
 				$is_update = true;
+				// Jika produk sudah ada tapi bukan variable, dan sekarang ada variants, upgrade ke variable
+				if ( $is_variable && $product && $product->get_type() !== 'variable' ) {
+					$product = new WC_Product_Variable( $product_id );
+				}
 			} else {
-				// Buat produk baru (default simple, bisa diubah ke variable jika ada variasi)
-				$product = new WC_Product_Simple();
+				if ( $is_variable ) {
+					$product = new WC_Product_Variable();
+				} else {
+					$product = new WC_Product_Simple();
+				}
 				$product->set_sku( $uuid );
 			}
 
@@ -719,13 +728,13 @@ class Woo_Odoo_Integration_Scheduler {
 				$product->set_short_description( $group['short_description'] );
 			}
 
-			// Set harga
-			if ( isset( $group['price'] ) ) {
+			// Set harga (hanya untuk simple, variable harga diambil dari variation)
+			if ( ! $is_variable && isset( $group['price'] ) ) {
 				$product->set_regular_price( $group['price'] );
 			}
 
-			// Set stok
-			if ( isset( $group['stock_quantity'] ) ) {
+			// Set stok (hanya untuk simple, variable stok diambil dari variation)
+			if ( ! $is_variable && isset( $group['stock_quantity'] ) ) {
 				$product->set_manage_stock( true );
 				$product->set_stock_quantity( $group['stock_quantity'] );
 			}
@@ -776,44 +785,97 @@ class Woo_Odoo_Integration_Scheduler {
 
 			// Set attributes (menggunakan filter mapping)
 			$attributes = array();
-			foreach ( $attribute_map as $odoo_key => $wc_label ) {
-				if ( isset( $group[ $odoo_key ] ) && ! empty( $group[ $odoo_key ] ) ) {
-					$attr_value = $group[ $odoo_key ];
-					$taxonomy = wc_sanitize_taxonomy_name( $wc_label );
-					// Pastikan attribute terdaftar di WooCommerce
-					if ( ! taxonomy_exists( 'pa_' . $taxonomy ) ) {
-						// Register attribute (if not exist)
-						wc_create_attribute( array( 'name' => $wc_label, 'slug' => $taxonomy, 'type' => 'select', 'order_by' => 'menu_order', 'has_archives' => false ) );
-						register_taxonomy( 'pa_' . $taxonomy, 'product', array( 'hierarchical' => false ) );
-					}
-					// Set attribute value (create term if not exist)
-					$term = get_term_by( 'name', $attr_value, 'pa_' . $taxonomy );
-					if ( ! $term ) {
-						$term = wp_insert_term( $attr_value, 'pa_' . $taxonomy );
-						if ( is_wp_error( $term ) ) {
-							$results['errors']++;
-							$results['details'][] = array( 'error' => 'Failed to create attribute term', 'attribute' => $wc_label, 'value' => $attr_value, 'msg' => $term->get_error_message() );
-							if ( $logger ) {
-								$logger->error( 'Failed to create attribute term: ' . $wc_label . ' - ' . $attr_value . ' - ' . $term->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+			$variation_attributes = array();
+			if ( $is_variable ) {
+				// Kumpulkan semua kombinasi attribute dari variants
+				foreach ( $group['variants'] as $variant ) {
+					foreach ( $attribute_map as $odoo_key => $wc_label ) {
+						if ( isset( $variant[ $odoo_key ] ) && ! empty( $variant[ $odoo_key ] ) ) {
+							$attr_value = $variant[ $odoo_key ];
+							$taxonomy = wc_sanitize_taxonomy_name( $wc_label );
+							// Pastikan attribute terdaftar di WooCommerce
+							if ( ! taxonomy_exists( 'pa_' . $taxonomy ) ) {
+								wc_create_attribute( array( 'name' => $wc_label, 'slug' => $taxonomy, 'type' => 'select', 'order_by' => 'menu_order', 'has_archives' => false ) );
+								register_taxonomy( 'pa_' . $taxonomy, 'product', array( 'hierarchical' => false ) );
 							}
-							continue;
+							// Set attribute value (create term if not exist)
+							$term = get_term_by( 'name', $attr_value, 'pa_' . $taxonomy );
+							if ( ! $term ) {
+								$term = wp_insert_term( $attr_value, 'pa_' . $taxonomy );
+								if ( is_wp_error( $term ) ) {
+									$results['errors']++;
+									$results['details'][] = array( 'error' => 'Failed to create attribute term', 'attribute' => $wc_label, 'value' => $attr_value, 'msg' => $term->get_error_message() );
+									if ( $logger ) {
+										$logger->error( 'Failed to create attribute term: ' . $wc_label . ' - ' . $attr_value . ' - ' . $term->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+									}
+									continue;
+								}
+								$term_id = $term['term_id'];
+							} else {
+								$term_id = $term->term_id;
+							}
+							wp_set_object_terms( $product->get_id(), $attr_value, 'pa_' . $taxonomy, true );
+							// Kumpulkan semua value untuk attribute ini
+							if ( ! isset( $variation_attributes[ 'pa_' . $taxonomy ] ) ) {
+								$variation_attributes[ 'pa_' . $taxonomy ] = array();
+							}
+							if ( ! in_array( $attr_value, $variation_attributes[ 'pa_' . $taxonomy ] ) ) {
+								$variation_attributes[ 'pa_' . $taxonomy ][] = $attr_value;
+							}
 						}
-						$term_id = $term['term_id'];
-					} else {
-						$term_id = $term->term_id;
 					}
-					wp_set_object_terms( $product->get_id(), $attr_value, 'pa_' . $taxonomy, true );
-					$attributes[ 'pa_' . $taxonomy ] = array(
-						'name' => 'pa_' . $taxonomy,
-						'value' => $attr_value,
+				}
+				// Set attributes ke produk variable
+				foreach ( $variation_attributes as $tax => $values ) {
+					$attributes[ $tax ] = array(
+						'name' => $tax,
+						'value' => implode( ' | ', $values ),
 						'is_visible' => 1,
-						'is_variation' => 0,
+						'is_variation' => 1,
 						'is_taxonomy' => 1,
 					);
 				}
-			}
-			if ( ! empty( $attributes ) ) {
-				$product->set_attributes( $attributes );
+				if ( ! empty( $attributes ) ) {
+					$product->set_attributes( $attributes );
+				}
+			} else {
+				// Produk simple, mapping attribute dari group
+				foreach ( $attribute_map as $odoo_key => $wc_label ) {
+					if ( isset( $group[ $odoo_key ] ) && ! empty( $group[ $odoo_key ] ) ) {
+						$attr_value = $group[ $odoo_key ];
+						$taxonomy = wc_sanitize_taxonomy_name( $wc_label );
+						if ( ! taxonomy_exists( 'pa_' . $taxonomy ) ) {
+							wc_create_attribute( array( 'name' => $wc_label, 'slug' => $taxonomy, 'type' => 'select', 'order_by' => 'menu_order', 'has_archives' => false ) );
+							register_taxonomy( 'pa_' . $taxonomy, 'product', array( 'hierarchical' => false ) );
+						}
+						$term = get_term_by( 'name', $attr_value, 'pa_' . $taxonomy );
+						if ( ! $term ) {
+							$term = wp_insert_term( $attr_value, 'pa_' . $taxonomy );
+							if ( is_wp_error( $term ) ) {
+								$results['errors']++;
+								$results['details'][] = array( 'error' => 'Failed to create attribute term', 'attribute' => $wc_label, 'value' => $attr_value, 'msg' => $term->get_error_message() );
+								if ( $logger ) {
+									$logger->error( 'Failed to create attribute term: ' . $wc_label . ' - ' . $attr_value . ' - ' . $term->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+								}
+								continue;
+							}
+							$term_id = $term['term_id'];
+						} else {
+							$term_id = $term->term_id;
+						}
+						wp_set_object_terms( $product->get_id(), $attr_value, 'pa_' . $taxonomy, true );
+						$attributes[ 'pa_' . $taxonomy ] = array(
+							'name' => 'pa_' . $taxonomy,
+							'value' => $attr_value,
+							'is_visible' => 1,
+							'is_variation' => 0,
+							'is_taxonomy' => 1,
+						);
+					}
+				}
+				if ( ! empty( $attributes ) ) {
+					$product->set_attributes( $attributes );
+				}
 			}
 
 			// Set meta data (custom fields)
@@ -826,6 +888,56 @@ class Woo_Odoo_Integration_Scheduler {
 			// Save product
 			try {
 				$product_id_saved = $product->save();
+				if ( $is_variable ) {
+					// Sinkronisasi variations
+					$existing_variations = array();
+					$children = $product->get_children();
+					foreach ( $children as $child_id ) {
+						$existing_variations[] = $child_id;
+					}
+					foreach ( $group['variants'] as $variant ) {
+						$variant_sku = isset( $variant['uuid'] ) ? $variant['uuid'] : '';
+						if ( empty( $variant_sku ) )
+							continue;
+						// Cari variation by SKU
+						$variation_id = wc_get_product_id_by_sku( $variant_sku );
+						$variation = false;
+						if ( $variation_id && in_array( $variation_id, $existing_variations ) ) {
+							$variation = new WC_Product_Variation( $variation_id );
+						} else {
+							$variation = new WC_Product_Variation();
+							$variation->set_parent_id( $product_id_saved );
+							$variation->set_sku( $variant_sku );
+						}
+						// Set attributes for this variation
+						$var_attr = array();
+						foreach ( $attribute_map as $odoo_key => $wc_label ) {
+							if ( isset( $variant[ $odoo_key ] ) && ! empty( $variant[ $odoo_key ] ) ) {
+								$taxonomy = 'pa_' . wc_sanitize_taxonomy_name( $wc_label );
+								$var_attr[ $taxonomy ] = $variant[ $odoo_key ];
+							}
+						}
+						$variation->set_attributes( $var_attr );
+						// Set harga
+						if ( isset( $variant['pricelists'][0]['sale_price'] ) ) {
+							$variation->set_regular_price( $variant['pricelists'][0]['sale_price'] );
+						}
+						// Set stok
+						if ( isset( $variant['quantity'] ) ) {
+							$variation->set_manage_stock( true );
+							$variation->set_stock_quantity( $variant['quantity'] );
+						}
+						// Set gambar utama variation (ambil gambar pertama dari images)
+						if ( isset( $variant['images'][0]['url'] ) ) {
+							$attach_id = $this->maybe_sideload_image( $variant['images'][0]['url'], $product_id_saved );
+							if ( $attach_id ) {
+								$variation->set_image_id( $attach_id );
+							}
+						}
+						// Simpan variation
+						$variation->save();
+					}
+				}
 				if ( $is_update ) {
 					$results['updated']++;
 					$results['details'][] = array( 'updated' => $uuid, 'product_id' => $product_id_saved );
