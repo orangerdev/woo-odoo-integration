@@ -685,6 +685,8 @@ class Woo_Odoo_Integration_Scheduler {
 		require_once ABSPATH . 'wp-admin/includes/media.php';
 
 		foreach ( $product_groups as $group ) {
+			\WC_CLI::log( $group );
+			continue;
 			$uuid = isset( $group['uuid'] ) ? $group['uuid'] : '';
 			if ( empty( $uuid ) ) {
 				$results['skipped']++;
@@ -792,6 +794,15 @@ class Woo_Odoo_Integration_Scheduler {
 					foreach ( $attribute_map as $odoo_key => $wc_label ) {
 						if ( isset( $variant[ $odoo_key ] ) && ! empty( $variant[ $odoo_key ] ) ) {
 							$attr_value = $variant[ $odoo_key ];
+							if ( is_array( $attr_value ) ) {
+								if ( isset( $attr_value['name'] ) ) {
+									$attr_value = $attr_value['name'];
+								} else {
+									$attr_value = implode( ', ', array_map( function ($v) {
+										return is_array( $v ) && isset( $v['name'] ) ? $v['name'] : (string) $v;
+									}, $attr_value ) );
+								}
+							}
 							$taxonomy = wc_sanitize_taxonomy_name( $wc_label );
 							// Pastikan attribute terdaftar di WooCommerce
 							if ( ! taxonomy_exists( 'pa_' . $taxonomy ) ) {
@@ -843,6 +854,15 @@ class Woo_Odoo_Integration_Scheduler {
 				foreach ( $attribute_map as $odoo_key => $wc_label ) {
 					if ( isset( $group[ $odoo_key ] ) && ! empty( $group[ $odoo_key ] ) ) {
 						$attr_value = $group[ $odoo_key ];
+						if ( is_array( $attr_value ) ) {
+							if ( isset( $attr_value['name'] ) ) {
+								$attr_value = $attr_value['name'];
+							} else {
+								$attr_value = implode( ', ', array_map( function ($v) {
+									return is_array( $v ) && isset( $v['name'] ) ? $v['name'] : (string) $v;
+								}, $attr_value ) );
+							}
+						}
 						$taxonomy = wc_sanitize_taxonomy_name( $wc_label );
 						if ( ! taxonomy_exists( 'pa_' . $taxonomy ) ) {
 							wc_create_attribute( array( 'name' => $wc_label, 'slug' => $taxonomy, 'type' => 'select', 'order_by' => 'menu_order', 'has_archives' => false ) );
@@ -914,7 +934,17 @@ class Woo_Odoo_Integration_Scheduler {
 						foreach ( $attribute_map as $odoo_key => $wc_label ) {
 							if ( isset( $variant[ $odoo_key ] ) && ! empty( $variant[ $odoo_key ] ) ) {
 								$taxonomy = 'pa_' . wc_sanitize_taxonomy_name( $wc_label );
-								$var_attr[ $taxonomy ] = $variant[ $odoo_key ];
+								$attr_val = $variant[ $odoo_key ];
+								if ( is_array( $attr_val ) ) {
+									if ( isset( $attr_val['name'] ) ) {
+										$attr_val = $attr_val['name'];
+									} else {
+										$attr_val = implode( ', ', array_map( function ($v) {
+											return is_array( $v ) && isset( $v['name'] ) ? $v['name'] : (string) $v;
+										}, $attr_val ) );
+									}
+								}
+								$var_attr[ $taxonomy ] = $attr_val;
 							}
 						}
 						$variation->set_attributes( $var_attr );
