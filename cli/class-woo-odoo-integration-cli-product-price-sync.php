@@ -1,11 +1,11 @@
 <?php
 /**
- * WooCommerce Odoo Integration - Product Stock Sync CLI Command
+ * WooCommerce Odoo Integration - Product Price Sync CLI Command
  *
  * This CLI command allows manual triggering of WooCommerce <-> Odoo product stock sync via WP-CLI.
  *
  * Usage:
- *   wp woo-odoo sync-product-stock [--chunk_size=<n>] [--interval=<minutes>]
+ *   wp woo-odoo sync-product-price [--chunk_size=<n>] [--interval=<minutes>]
  *
  * @package Woo_Odoo_Integration
  */
@@ -15,11 +15,11 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 }
 
 /**
- * CLI commands for WooCommerce Odoo Integration product stock sync.
+ * CLI commands for WooCommerce Odoo Integration product price sync.
  */
-class Woo_Odoo_Integration_CLI_Product_Stock_Sync {
+class Woo_Odoo_Integration_CLI_Product_Price_Sync {
 	/**
-	 * Manual trigger for product stock sync from Odoo to WooCommerce.
+	 * Manual trigger for product price sync from Odoo to WooCommerce.
 	 *
 	 * ## OPTIONS
 	 *
@@ -31,18 +31,18 @@ class Woo_Odoo_Integration_CLI_Product_Stock_Sync {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp woo-odoo sync-product-stock --chunk_size=20 --interval=2
+	 *     wp woo-odoo sync-product-price --chunk_size=20 --interval=2
 	 *
 	 */
-	public function sync_product_stock( $args, $assoc_args ) {
+	public function sync_product_price( $args, $assoc_args ) {
 		$chunk_size = isset( $assoc_args['chunk_size'] ) ? intval( $assoc_args['chunk_size'] ) : 10;
 		$interval = isset( $assoc_args['interval'] ) ? intval( $assoc_args['interval'] ) : 5;
 
-		WP_CLI::log( sprintf( 'Starting product stock sync: chunk_size=%d, interval=%d', $chunk_size, $interval ) );
+		WP_CLI::log( sprintf( 'Starting product price sync: chunk_size=%d, interval=%d', $chunk_size, $interval ) );
 
 		// Set mode
-		update_option( 'woo_odoo_auto_sync_mode', 'stock' );
-
+		update_option( 'woo_odoo_auto_sync_mode', 'price' );
+		
 		// Optionally override chunk settings for this run only.
 		update_option( 'woo_odoo_auto_sync_chunk_size', $chunk_size );
 		update_option( 'woo_odoo_auto_sync_chunk_interval', $interval );
@@ -66,16 +66,16 @@ class Woo_Odoo_Integration_CLI_Product_Stock_Sync {
 			return $msg;
 		} );
 
-		$result = $scheduler->force_start_sync( true, 'stock' ); // CLI mode langsung untuk sinkronisasi harga
+		$result = $scheduler->force_start_sync( true, 'price' ); // CLI mode langsung untuk sinkronisasi harga
 
 		// WP_CLI::log( print_r( $result, true ) );
 
 		if ( is_wp_error( $result ) ) {
 			WP_CLI::error( $result->get_error_message() );
 		} else {
-			WP_CLI::success( 'Product stock sync triggered successfully.' );
+			WP_CLI::success( 'Product price sync triggered successfully.' );
 		}
 	}
 }
 
-WP_CLI::add_command( 'woo-odoo sync-product-stock', [ 'Woo_Odoo_Integration_CLI_Product_Stock_Sync', 'sync_product_stock' ] );
+WP_CLI::add_command( 'woo-odoo sync-product-price', [ 'Woo_Odoo_Integration_CLI_Product_price_Sync', 'sync_product_price' ] );

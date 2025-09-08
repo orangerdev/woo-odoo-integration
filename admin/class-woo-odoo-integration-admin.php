@@ -131,6 +131,8 @@ class Admin
                 Field::make('text', 'odoo_scope', __('Scope'))
                     ->set_help_text(__('Enter the scope for the Odoo API, e.g., all'))
                     ->set_default_value('all'),
+                Field::make('text', 'odoo_location_att', __('Attribut Location'))
+                    ->set_default_value('pa_location'),
                 Field::make('checkbox', 'enable_customer_sync', __('Enable Customer Sync'))
                     ->set_help_text(__('Enable automatic customer synchronization with Odoo')),
                 Field::make('checkbox', 'enable_product_sync', __('Enable Product Sync'))

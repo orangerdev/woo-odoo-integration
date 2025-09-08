@@ -232,6 +232,7 @@ class Woo_Odoo_Integration
         $public = new Woo_Odoo_Integration\Front($this->get_plugin_name(), $this->get_version());
 
         $this->loader->add_action('woocommerce_add_to_cart_validation', $public, 'validate_add_to_cart', 10, 3);
+        $this->loader->add_action( 'woocommerce_thankyou', $public, 'woo_odoo_integration_checkout_send_order', 20, 1 );
 
     }
 

@@ -1208,6 +1208,70 @@ function woo_odoo_integration_api_get_product_stock() {
 }
 
 /**
+ * Get product price from Odoo API
+ *
+ * Retrieves product price information from Odoo using the /api/product-price endpoint.
+ * Returns price data for all products with variants and their quantities.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @hooks    Fires the following hooks:
+ *           - do_action('woo_odoo_integration_before_get_product_price')
+ *           - do_action('woo_odoo_integration_after_get_product_price', $price_data)
+ *           - do_action('woo_odoo_integration_get_product_price_failed', $error)
+ *
+ * @return   array|WP_Error          Product price data on success, WP_Error on failure
+ */
+function woo_odoo_integration_api_get_product_price() {
+	// Fire before get product price hook
+	do_action( 'woo_odoo_integration_before_get_product_price' );
+
+	$logger = wc_get_logger();
+	$logger->info( 'Starting product price sync from Odoo', array( 'source' => 'woo-odoo-product-sync' ) );
+
+	// Make API request to get product price
+	$response = woo_odoo_integration_api_get( 'api/product-price' );
+
+	if ( is_wp_error( $response ) ) {
+		$logger->error( 'Failed to get product price: ' . $response->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+		do_action( 'woo_odoo_integration_get_product_price_failed', $response );
+		return $response;
+	}
+
+	// Parse Odoo response
+	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
+		$error = new WP_Error(
+			'odoo_product_price_api_error',
+			__( 'Odoo product price API returned unexpected response format', 'woo-odoo-integration' ),
+			array( 'status' => 500, 'response' => $response )
+		);
+
+		$logger->error( 'Product price API returned unexpected response format', array( 'source' => 'woo-odoo-product-sync' ) );
+		do_action( 'woo_odoo_integration_get_product_price_failed', $error );
+		return $error;
+	}
+
+	$price_data = $response['data'];
+
+	// Apply filters to price data
+	$price_data = apply_filters( 'woo_odoo_integration_product_price_data', $price_data );
+
+	// Log the price data for debugging
+	$logger->debug( 'Retrieved product price data from Odoo', array(
+		'source' => 'woo-odoo-product-sync',
+		'price_data' => $price_data
+	) );
+
+	// Fire after get product price hook
+	do_action( 'woo_odoo_integration_after_get_product_price', $price_data );
+
+	$logger->info( 'Successfully retrieved product price data', array( 'source' => 'woo-odoo-product-sync' ) );
+
+	return $price_data;
+}
+
+/**
  * Sync product stock from Odoo to WooCommerce
  *
  * Updates WooCommerce product stock based on Odoo product stock data.
@@ -1249,8 +1313,10 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 
 	// Create SKU to stock mapping from Odoo data
 	$sku_stock_map = array();
-
+	// $counter = 0;
+	// $limit = 10; // Tentukan limit yang diinginkan
 	foreach ( $odoo_stock_data as $product_group ) {
+
 		if ( empty( $product_group['variants'] ) ) {
 			continue;
 		}
@@ -1258,17 +1324,33 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 		foreach ( $product_group['variants'] as $variant ) {
 			// Use variant UUID as SKU for mapping
 			if ( ! empty( $variant['uuid'] ) ) {
-				$sku = sanitize_text_field( $variant['uuid'] );
-				$quantity = floatval( $variant['quantity'] );
+				// $sku = sanitize_text_field( $variant['uuid'] );
+				$base_price = !empty($variant['pricelists'][0]['sale_price']) ? $variant['pricelists'][0]['sale_price'] : 0;
+	            $base_size  = !empty($variant['size_id']['name']) ? trim($variant['size_id']['name']) : '';
+	            $base_color = !empty($variant['color_id']['name']) ? trim($variant['color_id']['name']) : '';
 
-				$sku_stock_map[ $sku ] = $quantity;
+	            if (!empty($variant['quantity_per_location'])) {
+	                foreach ($variant['quantity_per_location'] as $loc) {
+	                    $loc_name_raw = trim($loc['name']);
+	                    $loc_name = (strpos($loc_name_raw, '/Stock ') !== false)
+	                        ? trim(explode('/Stock ', $loc_name_raw)[1])
+	                        : $loc_name_raw;
+	                    $loc_qty = intval($loc['quantity']);
 
-				$logger->debug( sprintf(
-					'Found SKU mapping: %s => %s (variant: %s)',
-					$sku,
-					$quantity,
-					$variant['name']
-				), array( 'source' => 'woo-odoo-product-sync' ) );
+	                    // 🔥 SKU unik
+	                    $sku = $variant['uuid'] . '-' . sanitize_title($loc_name);
+						$quantity = floatval( $variant['quantity'] );
+
+						$sku_stock_map[ $sku ] = $quantity;
+
+						$logger->debug( sprintf(
+							'Found SKU mapping: %s => %s (variant: %s)',
+							$sku,
+							$quantity,
+							$variant['name']
+						), array( 'source' => 'woo-odoo-product-sync' ) );
+					}
+				}
 			}
 		}
 	}
@@ -1304,86 +1386,184 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 	$products = get_posts( $args );
 
 	foreach ( $products as $product_post ) {
+
 		$product = wc_get_product( $product_post->ID );
 
-		if ( ! $product ) {
-			$sync_results['errors']++;
-			continue;
-		}
+	    if ( ! $product ) {
+	        $sync_results['errors']++;
+	        continue;
+	    }
 
-		$sku = $product->get_sku();
+	    // Jika produk adalah variable product
+	    if ( $product->is_type( 'variable' ) ) {
+	        $variations = $product->get_children(); // Dapatkan semua ID variasi
+	        $total_quantity = 0; // Variabel untuk menghitung stok total
 
-		if ( empty( $sku ) ) {
-			$sync_results['skipped']++;
-			$sync_results['details'][] = sprintf(
-				__( 'Product %s skipped: No SKU', 'woo-odoo-integration' ),
-				$product->get_name()
-			);
-			continue;
-		}
+	        foreach ( $variations as $variation_id ) {
+	            $variation = wc_get_product( $variation_id );
 
-		// Check if we have stock data for this SKU
-		if ( ! isset( $sku_stock_map[ $sku ] ) ) {
-			$sync_results['skipped']++;
-			$sync_results['details'][] = sprintf(
-				__( 'Product %s (SKU: %s) skipped: No stock data from Odoo', 'woo-odoo-integration' ),
-				$product->get_name(),
-				$sku
-			);
-			continue;
-		}
+	            if ( ! $variation ) {
+	                $sync_results['errors']++;
+	                continue;
+	            }
 
-		$new_stock = intval( $sku_stock_map[ $sku ] );
-		$old_stock = $product->get_stock_quantity();
+	            $sku = $variation->get_sku();
 
-		// Update stock quantity
-		$product->set_stock_quantity( $new_stock );
-		$product->set_manage_stock( true );
+	            if ( empty( $sku ) ) {
+	                $sync_results['skipped']++;
+	                $sync_results['details'][] = sprintf(
+	                    __( 'Variation of product %s skipped: No SKU', 'woo-odoo-integration' ),
+	                    $product->get_name()
+	                );
+	                continue;
+	            }
 
-		// Set stock status based on quantity
-		if ( $new_stock > 0 ) {
-			$product->set_stock_status( 'instock' );
-		} else {
-			$product->set_stock_status( 'outofstock' );
-		}
+	            // Cek apakah SKU ini ada di data dari Odoo
+	            if ( ! isset( $sku_stock_map[ $sku ] ) ) {
+	                $sync_results['skipped']++;
+	                $sync_results['details'][] = sprintf(
+	                    __( 'Variation of product %s (SKU: %s) skipped: No stock data from Odoo', 'woo-odoo-integration' ),
+	                    $product->get_name(),
+	                    $sku
+	                );
+	                continue;
+	            }
 
-		// Save product
-		$result = $product->save();
+	            $new_stock = intval( $sku_stock_map[ $sku ] );
+	            $old_stock = $variation->get_stock_quantity();
 
-		if ( $result ) {
-			$sync_results['updated']++;
-			$sync_results['details'][] = sprintf(
-				__( 'Product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration' ),
-				$product->get_name(),
-				$sku,
-				$old_stock,
-				$new_stock
-			);
+	            $variation->set_stock_quantity( $new_stock );
+	            $variation->set_manage_stock( true );
+	            $variation->set_stock_status( $new_stock > 0 ? 'instock' : 'outofstock' );
 
-			// Fire product stock updated hook
-			do_action( 'woo_odoo_integration_product_stock_updated', $product->get_id(), $old_stock, $new_stock );
+	            $result = $variation->save();
 
-			$logger->info( sprintf(
-				'Updated product stock: %s (SKU: %s) from %d to %d',
-				$product->get_name(),
-				$sku,
-				$old_stock,
-				$new_stock
-			), array( 'source' => 'woo-odoo-product-sync' ) );
-		} else {
-			$sync_results['errors']++;
-			$sync_results['details'][] = sprintf(
-				__( 'Product %s (SKU: %s) failed to update', 'woo-odoo-integration' ),
-				$product->get_name(),
-				$sku
-			);
+	            if ( $result ) {
+	                $sync_results['updated']++;
+	                $sync_results['details'][] = sprintf(
+	                    __( 'Variation of product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration' ),
+	                    $product->get_name(),
+	                    $sku,
+	                    $old_stock,
+	                    $new_stock
+	                );
 
-			$logger->error( sprintf(
-				'Failed to update product stock: %s (SKU: %s)',
-				$product->get_name(),
-				$sku
-			), array( 'source' => 'woo-odoo-product-sync' ) );
-		}
+	                do_action( 'woo_odoo_integration_product_stock_updated', $variation->get_id(), $old_stock, $new_stock );
+
+	                $logger->info( sprintf(
+	                    'Updated variation stock: %s (SKU: %s) from %d to %d',
+	                    $product->get_name(),
+	                    $sku,
+	                    $old_stock,
+	                    $new_stock
+	                ), array( 'source' => 'woo-odoo-product-sync' ) );
+	            } else {
+	                $sync_results['errors']++;
+	                $sync_results['details'][] = sprintf(
+	                    __( 'Variation of product %s (SKU: %s) failed to update', 'woo-odoo-integration' ),
+	                    $product->get_name(),
+	                    $sku
+	                );
+
+	                $logger->error( sprintf(
+	                    'Failed to update variation stock: %s (SKU: %s)',
+	                    $product->get_name(),
+	                    $sku
+	                ), array( 'source' => 'woo-odoo-product-sync' ) );
+	            }
+	            // Tambahkan stok variasi ke total stok produk induk
+            	$total_quantity += $new_stock;
+	        }
+
+	        if ( $total_quantity > 0 ) {
+	            $product->set_stock_quantity( $total_quantity );
+	            $product->set_stock_status( 'instock' );
+	        } else {
+	            $product->set_stock_quantity( 0 );
+	            $product->set_stock_status( 'outofstock' );
+	        }
+
+	        // Simpan perubahan stok produk induk
+	        $product->save();
+
+	        $logger->info( sprintf(
+	            'Updated main product stock: %s (SKU: %s) to %d',
+	            $product->get_name(),
+	            $product->get_sku(),
+	            $total_quantity
+	        ), array( 'source' => 'woo-odoo-product-sync' ) );
+	    } else {
+	        // Untuk produk biasa (simple product)
+	        $sku = $product->get_sku();
+
+	        if ( empty( $sku ) ) {
+	            $sync_results['skipped']++;
+	            $sync_results['details'][] = sprintf(
+	                __( 'Product %s skipped: No SKU', 'woo-odoo-integration' ),
+	                $product->get_name()
+	            );
+	            continue;
+	        }
+
+	        if ( ! isset( $sku_stock_map[ $sku ] ) ) {
+	            $sync_results['skipped']++;
+	            $sync_results['details'][] = sprintf(
+	                __( 'Product %s (SKU: %s) skipped: No stock data from Odoo', 'woo-odoo-integration' ),
+	                $product->get_name(),
+	                $sku
+	            );
+	            continue;
+	        }
+
+	        $new_stock = intval( $sku_stock_map[ $sku ] );
+	        $old_stock = $product->get_stock_quantity();
+
+	        $product->set_stock_quantity( $new_stock );
+	        $product->set_manage_stock( true );
+	        $product->set_stock_status( $new_stock > 0 ? 'instock' : 'outofstock' );
+
+	        $result = $product->save();
+
+	        if ( $result ) {
+	            $sync_results['updated']++;
+	            $sync_results['details'][] = sprintf(
+	                __( 'Product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration' ),
+	                $product->get_name(),
+	                $sku,
+	                $old_stock,
+	                $new_stock
+	            );
+
+	            do_action( 'woo_odoo_integration_product_stock_updated', $product->get_id(), $old_stock, $new_stock );
+
+	            $logger->info( sprintf(
+	                'Updated product stock: %s (SKU: %s) from %d to %d',
+	                $product->get_name(),
+	                $sku,
+	                $old_stock,
+	                $new_stock
+	            ), array( 'source' => 'woo-odoo-product-sync' ) );
+	        } else {
+	            $sync_results['errors']++;
+	            $sync_results['details'][] = sprintf(
+	                __( 'Product %s (SKU: %s) failed to update', 'woo-odoo-integration' ),
+	                $product->get_name(),
+	                $sku
+	            );
+
+	            $logger->error( sprintf(
+	                'Failed to update product stock: %s (SKU: %s)',
+	                $product->get_name(),
+	                $sku
+	            ), array( 'source' => 'woo-odoo-product-sync' ) );
+	        }
+	    }
+
+		// $counter++;
+		// // Berhenti setelah mencapai limit
+	    // if ($counter >= $limit) {
+	    //     break;
+	    // }
 	}
 
 	// Fire after sync hook
@@ -1397,6 +1577,276 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 	), array( 'source' => 'woo-odoo-product-sync' ) );
 
 	return $sync_results;
+}
+
+/**
+ * Sync product price from Odoo to WooCommerce
+ *
+ * Updates WooCommerce product price based on Odoo product price data.
+ * Maps products using SKU (WooCommerce) to variant UUID (Odoo).
+ * Uses variant UUID as the mapping key to match with WooCommerce SKU.
+ *
+ * @since    1.0.0
+ * @access   public
+ *
+ * @hooks    Fires the following hooks:
+ *           - do_action('woo_odoo_integration_before_sync_product_price', $product_ids)
+ *           - do_action('woo_odoo_integration_after_sync_product_price', $sync_price_results)
+ *           - do_action('woo_odoo_integration_product_price_updated', $product_id, $old_price, $new_price)
+ *
+ * @param    array    $product_ids    Array of WooCommerce product IDs to sync (optional, syncs all if empty)
+ *
+ * @return   array|WP_Error         Sync results on success, WP_Error on failure
+ */
+function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
+	$logger = wc_get_logger();
+	$logger->info( 'Starting product price synchronization', array( 'source' => 'woo-odoo-product-sync' ) );
+
+	// Fire before sync hook
+	do_action( 'woo_odoo_integration_before_sync_product_price', $product_ids );
+
+	// Get product price from Odoo
+	$odoo_price_data = woo_odoo_integration_api_get_product_price();
+
+	if ( is_wp_error( $odoo_price_data ) ) {
+		return $odoo_price_data;
+	}
+
+	$sync_price_results = array(
+		'updated' => 0,
+		'skipped' => 0,
+		'errors' => 0,
+		'details' => array()
+	);
+
+	// Create SKU to price mapping from Odoo data
+	$sku_price_map = array();
+	// $counter = 0;
+	// $limit = 10; // Tentukan limit yang diinginkan
+	foreach ( $odoo_price_data as $product_group ) {
+
+		if ( empty( $product_group['variants'] ) ) {
+			continue;
+		}
+
+		foreach ( $product_group['variants'] as $variant ) {
+			// Use variant UUID as SKU for mapping
+			if ( ! empty( $variant['uuid'] ) ) {
+				// $sku = sanitize_text_field( $variant['uuid'] );
+				$base_price = !empty($variant['pricelists'][0]['sale_price']) ? $variant['pricelists'][0]['sale_price'] : 0;
+	            $base_size  = !empty($variant['size_id']['name']) ? trim($variant['size_id']['name']) : '';
+	            $base_color = !empty($variant['color_id']['name']) ? trim($variant['color_id']['name']) : '';
+
+			    // Misalnya mau mapping harga
+			    if ( ! empty( $variant['pricelists'] ) ) {
+			        foreach ( $variant['pricelists'] as $price_item ) {
+			            $sku = $price_item['uuid'];
+
+						$sale_price = ! empty( $price_item['sale_price'] ) ? floatval( $price_item['sale_price'] ) : 0;
+			            $sku_price_map[ $sku ] = $sale_price;
+			        }
+			    }
+			}
+		}
+	}
+
+	if ( empty( $sku_price_map ) ) {
+		$error = new WP_Error(
+			'no_sku_mappings',
+			__( 'No valid SKU mappings found in Odoo price data', 'woo-odoo-integration' )
+		);
+		$logger->warning( 'No valid SKU mappings found in Odoo price data', array( 'source' => 'woo-odoo-product-sync' ) );
+		return $error;
+	}
+
+	// Get WooCommerce products to sync
+	$args = array(
+		'post_type' => 'product',
+		'post_status' => 'publish',
+		'posts_per_page' => -1,
+		'meta_query' => array(
+			array(
+				'key' => '_sku',
+				'value' => '',
+				'compare' => '!='
+			)
+		)
+	);
+
+	// If specific product IDs provided, filter by them
+	if ( ! empty( $product_ids ) ) {
+		$args['post__in'] = array_map( 'intval', $product_ids );
+	}
+
+	$products = get_posts( $args );
+
+	foreach ( $products as $product_post ) {
+
+		$product = wc_get_product( $product_post->ID );
+
+	    if ( ! $product ) {
+	        $sync_price_results['errors']++;
+	        continue;
+	    }
+
+	    // Jika produk adalah variable product
+	    if ( $product->is_type( 'variable' ) ) {
+	        $variations = $product->get_children(); // Dapatkan semua ID variasi
+
+	        foreach ( $variations as $variation_id ) {
+	            $variation = wc_get_product( $variation_id );
+
+	            if ( ! $variation ) {
+	                $sync_price_results['errors']++;
+	                continue;
+	            }
+
+	            $sku_pricelists = get_post_meta( $variation_id, '_odoo_pricelists', true );
+	            $sku = $sku_pricelists;
+
+	            if ( empty( $sku ) ) {
+	                $sync_price_results['skipped']++;
+	                $sync_price_results['details'][] = sprintf(
+	                    __( 'Variation of product %s skipped: No SKU', 'woo-odoo-integration' ),
+	                    $product->get_name()
+	                );
+	                continue;
+	            }
+
+	            // Cek apakah SKU ini ada di data dari Odoo
+	            if ( ! isset( $sku_price_map[ $sku ] ) ) {
+	                $sync_price_results['skipped']++;
+	                $sync_price_results['details'][] = sprintf(
+	                    __( 'Variation of product %s (SKU: %s) skipped: No price data from Odoo', 'woo-odoo-integration' ),
+	                    $product->get_name(),
+	                    $sku
+	                );
+	                continue;
+	            }
+
+	            $new_price = floatval( $sku_price_map[ $sku ] );
+	            $old_price = $variation->get_regular_price();
+
+	            $variation->set_regular_price( $new_price );
+
+	            $result = $variation->save();
+
+	            if ( $result ) {
+	                $sync_price_results['updated']++;
+	                $sync_price_results['details'][] = sprintf(
+	                    __( 'Variation of product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration' ),
+	                    $product->get_name(),
+	                    $sku,
+	                    $old_price,
+	                    $new_price
+	                );
+
+	                do_action( 'woo_odoo_integration_product_price_updated', $variation->get_id(), $old_price, $new_price );
+
+	                $logger->info( sprintf(
+	                    'Updated variation price: %s (SKU: %s) from %d to %d',
+	                    $product->get_name(),
+	                    $sku,
+	                    $old_price,
+	                    $new_price
+	                ), array( 'source' => 'woo-odoo-product-sync' ) );
+	            } else {
+	                $sync_price_results['errors']++;
+	                $sync_price_results['details'][] = sprintf(
+	                    __( 'Variation of product %s (SKU: %s) failed to update', 'woo-odoo-integration' ),
+	                    $product->get_name(),
+	                    $sku
+	                );
+
+	                $logger->error( sprintf(
+	                    'Failed to update variation price: %s (SKU: %s)',
+	                    $product->get_name(),
+	                    $sku
+	                ), array( 'source' => 'woo-odoo-product-sync' ) );
+	            }
+	        }
+	    } else {
+	        // Untuk produk biasa (simple product)
+	        $sku = $product->get_sku();
+
+	        if ( empty( $sku ) ) {
+	            $sync_price_results['skipped']++;
+	            $sync_price_results['details'][] = sprintf(
+	                __( 'Product %s skipped: No SKU', 'woo-odoo-integration' ),
+	                $product->get_name()
+	            );
+	            continue;
+	        }
+
+	        if ( ! isset( $sku_price_map[ $sku ] ) ) {
+	            $sync_price_results['skipped']++;
+	            $sync_price_results['details'][] = sprintf(
+	                __( 'Product %s (SKU: %s) skipped: No price data from Odoo', 'woo-odoo-integration' ),
+	                $product->get_name(),
+	                $sku
+	            );
+	            continue;
+	        }
+
+	        $old_price = $product->get_regular_price();
+
+	        $product->set_regular_price( $new_price );
+
+	        $result = $product->save();
+
+	        if ( $result ) {
+	            $sync_price_results['updated']++;
+	            $sync_price_results['details'][] = sprintf(
+	                __( 'Product %s (SKU: %s) updated: %d → %d', 'woo-odoo-integration' ),
+	                $product->get_name(),
+	                $sku,
+	                $old_price,
+	                $new_price
+	            );
+
+	            do_action( 'woo_odoo_integration_product_price_updated', $product->get_id(), $old_price, $new_price );
+
+	            $logger->info( sprintf(
+	                'Updated product price: %s (SKU: %s) from %d to %d',
+	                $product->get_name(),
+	                $sku,
+	                $old_price,
+	                $new_price
+	            ), array( 'source' => 'woo-odoo-product-sync' ) );
+	        } else {
+	            $sync_price_results['errors']++;
+	            $sync_price_results['details'][] = sprintf(
+	                __( 'Product %s (SKU: %s) failed to update', 'woo-odoo-integration' ),
+	                $product->get_name(),
+	                $sku
+	            );
+
+	            $logger->error( sprintf(
+	                'Failed to update product price: %s (SKU: %s)',
+	                $product->get_name(),
+	                $sku
+	            ), array( 'source' => 'woo-odoo-product-sync' ) );
+	        }
+	    }
+
+		// $counter++;
+		// // Berhenti setelah mencapai limit
+	    // if ($counter >= $limit) {
+	    //     break;
+	    // }
+	}
+
+	// Fire after sync hook
+	do_action( 'woo_odoo_integration_after_sync_product_price', $sync_price_results );
+
+	$logger->info( sprintf(
+		'Product price sync completed. Updated: %d, Skipped: %d, Errors: %d',
+		$sync_price_results['updated'],
+		$sync_price_results['skipped'],
+		$sync_price_results['errors']
+	), array( 'source' => 'woo-odoo-product-sync' ) );
+
+	return $sync_price_results;
 }
 
 /**
@@ -1614,8 +2064,8 @@ function woo_odoo_integration_api_get_product_groups( $page = 1, $limit = 80 ) {
 
 	// Query args untuk GET request
 	$query_args = array(
-		'page' => intval( $page ),
-		'limit' => intval( $limit ),
+		// 'page' => intval( $page ),
+		// 'limit' => intval( $limit ),
 	);
 
 	// Gunakan helper API GET agar token otomatis
@@ -1645,4 +2095,157 @@ function woo_odoo_integration_api_get_product_groups( $page = 1, $limit = 80 ) {
 	do_action( 'woo_odoo_integration_after_get_product_groups', $product_groups, $page, $limit );
 
 	return $product_groups;
+}
+
+function woo_odoo_integration_api_request_order( $endpoint, $body = array(), $method = 'POST' ) {
+
+	$access_token = woo_odoo_integration_api_get_access_token();
+
+	if ( is_wp_error( $access_token ) ) {
+		return $access_token;
+	}
+
+    $url = trailingslashit( 'https://sandbox-2019.parangkencana.com/' ) . ltrim( $endpoint, '/' );
+
+    $args = array(
+        'method'  => $method,
+        'headers' => array(
+            'Authorization' => 'Bearer ' . $access_token,
+            'Content-Type'  => 'application/json',
+        ),
+        'body'    => ! empty( $body ) ? wp_json_encode( $body ) : null,
+        'timeout' => 30,
+    );
+
+    $response = wp_remote_request( $url, $args );
+
+    if ( is_wp_error( $response ) ) {
+        return $response;
+    }
+
+    $data = json_decode( wp_remote_retrieve_body( $response ), true );
+    $status = wp_remote_retrieve_response_code( $response );
+
+    if ( $status >= 400 ) {
+        return new WP_Error(
+            'api_error_' . $status,
+            "Access url: {$url}. Odoo API returned error {$status}: " . wp_remote_retrieve_body( $response ),
+            array( 'status' => $status, 'endpoint' => $endpoint )
+        );
+    }
+
+    return $data;
+
+}
+
+
+/**
+ * Kirim order WooCommerce ke Odoo API.
+ *
+ * @param int $order_id WooCommerce Order ID.
+ * @return array|WP_Error
+ */
+function woo_odoo_integration_api_send_order( $order_id ) {
+
+    // Hook sebelum kirim order
+    do_action( 'woo_odoo_integration_before_send_order', $order_id );
+
+    $logger = wc_get_logger();
+    $logger->info( "Starting send order #{$order_id} to Odoo", [ 'source' => 'woo-odoo-order-sync' ] );
+
+    $order = wc_get_order( $order_id );
+    if ( ! $order ) {
+        $error = new WP_Error(
+            'woocommerce_order_not_found',
+            __( 'WooCommerce order not found', 'woo-odoo-integration' ),
+            [ 'order_id' => $order_id ]
+        );
+        do_action( 'woo_odoo_integration_send_order_failed', $error );
+        return $error;
+    }
+
+    // --- Partner (Customer UUID) ---
+    $partner_id = get_user_meta( $order->get_user_id(), '_odoo_partner_uuid', true );
+    if ( empty( $partner_id ) ) {
+        $partner_id = '50633bf0-4ab1-4387-b937-91130b128143'; // fallback
+    }
+
+    // --- Build Order Lines ---
+    $order_lines = [];
+    $pricelist_id = $warehouse_id = 0;
+    foreach ( $order->get_items() as $item ) {
+        $product = $item->get_product();
+        if ( ! $product ) continue;
+
+        $product_id = $product->get_id();
+
+	    $sku_pricelists = get_post_meta( $product_id, '_odoo_pricelists', true );
+	    $pricelist_id = apply_filters( 'woo_odoo_integration_default_pricelist_id', $sku_pricelists, $order );
+	    $sku_warehouse = get_post_meta( $product_id, '_odoo_warehouse_id', true );
+	    $warehouse_id = apply_filters( 'woo_odoo_integration_default_warehouse_id', $sku_warehouse, $order );
+		        
+        $get_product_uuid = $product->get_sku(); // mapping: SKU = Odoo UUID
+        // $get_product_uuid = 'cf120af1-62b0-41fb-8574-0df16d2d08f4';
+
+		$parts = explode('-', $get_product_uuid);
+		$first_six_parts = array_slice($parts, 0, 5);
+		$product_uuid = implode('-', $first_six_parts);
+
+        if ( empty( $product_uuid ) ) continue;
+
+        $order_lines[] = [
+            'product_id' => $product_uuid,
+            'quantity'   => $item->get_quantity(),
+            'price_unit' => $order->get_item_total( $item, false, false ),
+        ];
+    }
+
+    // --- Payload ---
+    $payload = [
+        'date_order'   => gmdate( 'Y-m-d H:i:s' ),
+        'partner_id'   => $partner_id,
+        'pricelist_id' => $pricelist_id,
+        'warehouse_id' => $warehouse_id,
+        'order_line'   => $order_lines,
+    ];
+
+    // Allow filter untuk modifikasi payload
+    $payload = apply_filters( 'woo_odoo_integration_send_order_payload', $payload, $order );
+
+    // --- Request ke Odoo ---
+    $response = woo_odoo_integration_api_request_order( 'api/sale-orders', $payload, 'POST' );
+
+    if ( is_wp_error( $response ) ) {
+        $logger->error( "Failed to send order #{$order_id} to Odoo: " . $response->get_error_message(), [ 'source' => 'woo-odoo-order-sync' ] );
+        do_action( 'woo_odoo_integration_send_order_failed', $response, $order );
+        return $response;
+    }
+
+    // Cek response Odoo
+    if ( ! isset( $response['code'] ) || 200 !== $response['code'] ) {
+        $error = new WP_Error(
+            'odoo_order_api_error',
+            __( 'Odoo order API returned unexpected response format', 'woo-odoo-integration' ),
+            [ 'status' => 500, 'response' => $response ]
+        );
+
+        $logger->error( "Odoo API returned invalid response for order #{$order_id}", [ 'source' => 'woo-odoo-order-sync' ] );
+        do_action( 'woo_odoo_integration_send_order_failed', $error, $order );
+        return $error;
+    }
+
+    // Log sukses
+    $logger->info( "Successfully sent order #{$order_id} to Odoo", [
+        'source'   => 'woo-odoo-order-sync',
+        'response' => $response,
+    ] );
+
+    // Hook setelah sukses
+    do_action( 'woo_odoo_integration_after_send_order', $response, $order );
+
+    // Tambahkan catatan di order
+    $order->add_order_note( 'Order sent to Odoo: ' . wp_json_encode( $response ) );
+
+    return $response;
+    
 }

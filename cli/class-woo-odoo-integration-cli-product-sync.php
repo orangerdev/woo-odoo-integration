@@ -35,8 +35,10 @@ class Woo_Odoo_Integration_CLI_Product_Sync {
 	 *
 	 */
 	public function sync_products( $args, $assoc_args ) {
+		WP_CLI::log( 'Masuk ke dalam fungsi sync_products' );
+
 		$page = isset( $assoc_args['page'] ) ? intval( $assoc_args['page'] ) : 1;
-		$limit = isset( $assoc_args['limit'] ) ? intval( $assoc_args['limit'] ) : 80;
+		$limit = isset( $assoc_args['limit'] ) ? intval( $assoc_args['limit'] ) : 1;
 
 		WP_CLI::log( sprintf( 'Starting product sync: page=%d, limit=%d', $page, $limit ) );
 
@@ -61,9 +63,17 @@ class Woo_Odoo_Integration_CLI_Product_Sync {
 			return $msg;
 		} );
 
-		WP_CLI::log( $product_groups );
+		// WP_CLI::log( $product_groups );
+		// WP_CLI::log( print_r( $product_groups, true ) );
 
-		// $results = $scheduler->sync_odoo_products_to_wc( $product_groups );
+		$results = $scheduler->sync_odoo_products_to_wc( $product_groups );
+		
+		// WP_CLI::log( print_r( $results, true ) );
+
+		if ( ! is_array( $results ) ) {
+			WP_CLI::error( 'Product sync did not return valid result.' );
+			return;
+		}
 
 		WP_CLI::success( sprintf( 'Product sync completed. Created: %d, Updated: %d, Skipped: %d, Errors: %d',
 			$results['created'], $results['updated'], $results['skipped'], $results['errors'] ) );
