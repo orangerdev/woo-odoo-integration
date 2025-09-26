@@ -813,12 +813,13 @@ function woo_odoo_integration_api_create_customer( $customer_data, $wc_customer_
 		'street' => isset( $customer_data['street'] ) ? sanitize_text_field( $customer_data['street'] ) : '',
 		'street2' => isset( $customer_data['street2'] ) ? sanitize_text_field( $customer_data['street2'] ) : '',
 		'city' => isset( $customer_data['city'] ) ? sanitize_text_field( $customer_data['city'] ) : '',
-		'zip' => isset( $customer_data['zip'] ) ? sanitize_text_field( $customer_data['zip'] ) : '',
-		'vat' => isset( $customer_data['vat'] ) ? sanitize_text_field( $customer_data['vat'] ) : '',
+		'zip' => isset( $customer_data['zip'] ) ? intval( $customer_data['zip'] ) : null,
+		'vat' => isset( $customer_data['vat'] ) ? intval( $customer_data['vat'] ) : null,
 		'phone' => isset( $customer_data['phone'] ) ? sanitize_text_field( $customer_data['phone'] ) : '',
 		'mobile' => isset( $customer_data['mobile'] ) ? sanitize_text_field( $customer_data['mobile'] ) : '',
 		'country_id' => isset( $customer_data['country_id'] ) ? sanitize_text_field( $customer_data['country_id'] ) : '',
 	);
+
 
 	// Remove empty fields to avoid API issues
 	$odoo_customer_data = array_filter( $odoo_customer_data, function ($value) {
@@ -1324,11 +1325,7 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 		foreach ( $product_group['variants'] as $variant ) {
 			// Use variant UUID as SKU for mapping
 			if ( ! empty( $variant['uuid'] ) ) {
-				// $sku = sanitize_text_field( $variant['uuid'] );
-				$base_price = !empty($variant['pricelists'][0]['sale_price']) ? $variant['pricelists'][0]['sale_price'] : 0;
-	            $base_size  = !empty($variant['size_id']['name']) ? trim($variant['size_id']['name']) : '';
-	            $base_color = !empty($variant['color_id']['name']) ? trim($variant['color_id']['name']) : '';
-
+	
 	            if (!empty($variant['quantity_per_location'])) {
 	                foreach ($variant['quantity_per_location'] as $loc) {
 	                    $loc_name_raw = trim($loc['name']);
@@ -1622,7 +1619,7 @@ function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
 	// Create SKU to price mapping from Odoo data
 	$sku_price_map = array();
 	// $counter = 0;
-	// $limit = 10; // Tentukan limit yang diinginkan
+	// $limit = 2; // Tentukan limit yang diinginkan
 	foreach ( $odoo_price_data as $product_group ) {
 
 		if ( empty( $product_group['variants'] ) ) {
@@ -1632,18 +1629,17 @@ function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
 		foreach ( $product_group['variants'] as $variant ) {
 			// Use variant UUID as SKU for mapping
 			if ( ! empty( $variant['uuid'] ) ) {
-				// $sku = sanitize_text_field( $variant['uuid'] );
-				$base_price = !empty($variant['pricelists'][0]['sale_price']) ? $variant['pricelists'][0]['sale_price'] : 0;
-	            $base_size  = !empty($variant['size_id']['name']) ? trim($variant['size_id']['name']) : '';
-	            $base_color = !empty($variant['color_id']['name']) ? trim($variant['color_id']['name']) : '';
+				$sku = sanitize_text_field( $variant['uuid'] );
 
 			    // Misalnya mau mapping harga
 			    if ( ! empty( $variant['pricelists'] ) ) {
 			        foreach ( $variant['pricelists'] as $price_item ) {
-			            $sku = $price_item['uuid'];
-
 						$sale_price = ! empty( $price_item['sale_price'] ) ? floatval( $price_item['sale_price'] ) : 0;
-			            $sku_price_map[ $sku ] = $sale_price;
+			            if ($sale_price > 1) {
+		                    $sku_price_map[ $sku ] = $sale_price;
+		                    $uuid_price_map[ $sku ] = $price_item['uuid'];
+		                }
+
 			        }
 			    }
 			}
@@ -1701,8 +1697,14 @@ function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
 	                continue;
 	            }
 
-	            $sku_pricelists = get_post_meta( $variation_id, '_odoo_pricelists', true );
-	            $sku = $sku_pricelists;
+	            // $sku_pricelists = get_post_meta( $variation_id, '_odoo_pricelists', true );
+	            // $sku = $sku_pricelists;
+
+	            $get_variant_uuid = $variation->get_sku();
+
+				$parts = explode('-', $get_variant_uuid);
+				$first_six_parts = array_slice($parts, 0, 5);
+				$sku = implode('-', $first_six_parts);
 
 	            if ( empty( $sku ) ) {
 	                $sync_price_results['skipped']++;
@@ -1725,11 +1727,19 @@ function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
 	            }
 
 	            $new_price = floatval( $sku_price_map[ $sku ] );
+	            $uuid_price = $uuid_price_map[ $sku ];
 	            $old_price = $variation->get_regular_price();
 
 	            $variation->set_regular_price( $new_price );
 
 	            $result = $variation->save();
+
+	            $variation_id = wc_get_product_id_by_sku($get_variant_uuid);
+    		    update_post_meta(
+			        $variation_id,
+			        '_odoo_pricelists',
+			        $uuid_price
+			    );
 
 	            if ( $result ) {
 	                $sync_price_results['updated']++;
@@ -2165,7 +2175,7 @@ function woo_odoo_integration_api_send_order( $order_id ) {
     }
 
     // --- Partner (Customer UUID) ---
-    $partner_id = get_user_meta( $order->get_user_id(), '_odoo_partner_uuid', true );
+    $partner_id = get_user_meta( $order->get_user_id(), '_odoo_customer_uuid', true );
     if ( empty( $partner_id ) ) {
         $partner_id = '50633bf0-4ab1-4387-b937-91130b128143'; // fallback
     }

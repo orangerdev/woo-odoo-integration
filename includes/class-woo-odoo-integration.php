@@ -174,7 +174,7 @@ class Woo_Odoo_Integration
         $user_handler = new Woo_Odoo_Integration\Admin\User($this->get_plugin_name(), $this->get_version());
 
         // Only use checkout order processed hook for customer sync
-        $this->loader->add_action('woocommerce_checkout_order_processed', $user_handler, 'sync_customer_to_odoo_after_checkout', 10, 1);
+        $this->loader->add_action('woocommerce_thankyou', $user_handler, 'sync_customer_to_odoo_after_checkout', 10, 1);
 
         // Scheduled action hooks (keep for admin manual sync)
         $this->loader->add_action('woo_odoo_integration_sync_customer', $user_handler, 'sync_customer_to_odoo');

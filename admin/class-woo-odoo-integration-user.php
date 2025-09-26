@@ -605,6 +605,7 @@ Data: %s',
 
         // Check if customer exists in WordPress
         $user = get_user_by('id', $customer_id);
+
         if (!$user) {
             $logger->error(sprintf('Customer %d not found in WordPress', $customer_id), array('source' => 'woo-odoo-customer-sync'));
             return;
