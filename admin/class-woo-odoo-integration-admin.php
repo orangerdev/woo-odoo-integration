@@ -131,6 +131,31 @@ class Admin
                 Field::make('text', 'odoo_scope', __('Scope'))
                     ->set_help_text(__('Enter the scope for the Odoo API, e.g., all'))
                     ->set_default_value('all'),
+                
+                Field::make('checkbox', 'enable_sync_attribut_color', __('Enable Sync Attribute Color'))
+                    ->set_default_value(true)
+                    ->set_help_text(__('Enable attribute color when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_size', __('Enable Sync Attribute Size'))
+                    ->set_default_value(true)
+                    ->set_help_text(__('Enable attribute size when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_location', __('Enable Sync Attribute Location'))
+                    ->set_default_value(true)
+                    ->set_help_text(__('Enable attribute location when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_brand', __('Enable Sync Attribute Brand'))
+                    ->set_help_text(__('Enable attribute brand when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_design_code', __('Enable Sync Attribute Design Code'))
+                    ->set_help_text(__('Enable attribute design code when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_material', __('Enable Sync Attribute Material'))
+                    ->set_help_text(__('Enable attribute material when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_model', __('Enable Sync Attribute Model'))
+                    ->set_help_text(__('Enable attribute model when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_process', __('Enable Sync Attribute Process'))
+                    ->set_help_text(__('Enable attribute process when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_attribut_product_type', __('Enable Sync Attribute Type'))
+                    ->set_help_text(__('Enable attribute type when product synchronization with Odoo')),
+                Field::make('checkbox', 'enable_sync_photo_product', __('Enable Sync Product Photo'))
+                    ->set_help_text(__('Enable product photo when product synchronization with Odoo')),
+
                 Field::make('text', 'odoo_location_att', __('Attribut Location'))
                     ->set_default_value('pa_location'),
                 Field::make('checkbox', 'enable_customer_sync', __('Enable Customer Sync'))
@@ -153,6 +178,5 @@ class Admin
                     ->set_help_text(__('Enter the Odoo Warehouse ID for this category')),
             ));
     }
-
 
 }

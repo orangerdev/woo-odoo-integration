@@ -2163,6 +2163,7 @@ function woo_odoo_integration_api_send_order( $order_id ) {
     $logger = wc_get_logger();
     $logger->info( "Starting send order #{$order_id} to Odoo", [ 'source' => 'woo-odoo-order-sync' ] );
 
+    $pricelist_id = $warehouse_id = $partner_id = 0;
     $order = wc_get_order( $order_id );
     if ( ! $order ) {
         $error = new WP_Error(
@@ -2176,13 +2177,9 @@ function woo_odoo_integration_api_send_order( $order_id ) {
 
     // --- Partner (Customer UUID) ---
     $partner_id = get_user_meta( $order->get_user_id(), '_odoo_customer_uuid', true );
-    if ( empty( $partner_id ) ) {
-        $partner_id = '50633bf0-4ab1-4387-b937-91130b128143'; // fallback
-    }
 
     // --- Build Order Lines ---
     $order_lines = [];
-    $pricelist_id = $warehouse_id = 0;
     foreach ( $order->get_items() as $item ) {
         $product = $item->get_product();
         if ( ! $product ) continue;
@@ -2192,10 +2189,17 @@ function woo_odoo_integration_api_send_order( $order_id ) {
 	    $sku_pricelists = get_post_meta( $product_id, '_odoo_pricelists', true );
 	    $pricelist_id = apply_filters( 'woo_odoo_integration_default_pricelist_id', $sku_pricelists, $order );
 	    $sku_warehouse = get_post_meta( $product_id, '_odoo_warehouse_id', true );
-	    $warehouse_id = apply_filters( 'woo_odoo_integration_default_warehouse_id', $sku_warehouse, $order );
+
+	    $endpoint = '/api/warehouse-groups/'.$sku_warehouse;
+		$query_args = array();
+		$response = woo_odoo_integration_api_get( $endpoint, $query_args );
+		foreach ($response['data'] as $location) {
+		    $main_warehouse_uuid = $location['main_warehouse_id']['uuid'];
+		}
+
+	    $warehouse_id = apply_filters( 'woo_odoo_integration_default_warehouse_id', $main_warehouse_uuid, $order );
 		        
         $get_product_uuid = $product->get_sku(); // mapping: SKU = Odoo UUID
-        // $get_product_uuid = 'cf120af1-62b0-41fb-8574-0df16d2d08f4';
 
 		$parts = explode('-', $get_product_uuid);
 		$first_six_parts = array_slice($parts, 0, 5);

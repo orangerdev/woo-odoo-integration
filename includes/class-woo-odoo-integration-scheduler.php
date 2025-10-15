@@ -987,16 +987,25 @@ class Woo_Odoo_Integration_Scheduler {
 	        'details' => array(),
 	    );
 
-	    // Pastikan atribut global ada
-	    $this->ensure_product_attribute('Size', 'size');
-	    $this->ensure_product_attribute('Color', 'color');
-	    $this->ensure_product_attribute('Location', 'location');
-	    $this->ensure_product_attribute('Model', 'model');
-	    $this->ensure_product_attribute('Process', 'process');
-	    $this->ensure_product_attribute('Brand', 'brand');
-	    $this->ensure_product_attribute('Type', 'product_type');
-	    $this->ensure_product_attribute('Material', 'material');
-	    $this->ensure_product_attribute('Design Code', 'design_code');
+		$attributes_to_sync = [
+		    'size'         => ['label' => 'Size',         'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_size'))],
+		    'color'        => ['label' => 'Color',        'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_color'))],
+		    'location'     => ['label' => 'Location',     'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_location'))],
+		    'model'        => ['label' => 'Model',        'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_model'))],
+		    'process'      => ['label' => 'Process',      'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_process'))],
+		    'brand'        => ['label' => 'Brand',        'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_brand'))],
+		    'product_type' => ['label' => 'Type',         'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_product_type'))],
+		    'material'     => ['label' => 'Material',     'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_material'))],
+		    'design_code'  => ['label' => 'Design Code',  'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_design_code'))],
+		];
+
+		foreach ($attributes_to_sync as $slug => $data) {
+		    if ($data['enabled']) {
+		        $this->ensure_product_attribute($data['label'], $slug);
+		    }
+		}
+
+		$enable_sync_photo_product = boolval(carbon_get_theme_option('enable_sync_photo_product'));
 
 	    $attribute_map = apply_filters( 'woo_odoo_integration_product_attribute_map', array(
 		    'size_id'        => 'Size',
@@ -1042,10 +1051,10 @@ class Woo_Odoo_Integration_Scheduler {
 	    require_once ABSPATH . 'wp-admin/includes/media.php';
 
 	    // $counter = 0;
-	    // $limit   = 10; // limit untuk testing
+	    // $limit   = 5; // limit untuk testing
 
 	    foreach ( $product_groups as $product_data ) {
-	    	// WP_CLI::log( print_r( $product_data, true ) );
+
 	        $product_name = $product_data['name'];
 	        $product_slug = sanitize_title($product_data['slug']);
 	        $product_desc = $product_data['description'];
@@ -1128,14 +1137,16 @@ class Woo_Odoo_Integration_Scheduler {
 	                $product->set_category_ids( array( $term_id ) );
 	            }
 
-	            // Set main image
-	            if ( isset( $product_data['variants'][0]['images'][0]['url'] ) ) {
-	                $image_url = $product_data['variants'][0]['images'][0]['url'];
-	                $attach_id = $this->download_external_image($image_url, $product_id);
-	                if ( $attach_id ) {
-	                    $product->set_image_id( $attach_id );
-	                }
-	            }
+	            if(true === $enable_sync_photo_product) :
+		            // Set main image
+		            if ( isset( $product_data['variants'][0]['images'][0]['url'] ) ) {
+		                $image_url = $product_data['variants'][0]['images'][0]['url'];
+		                $attach_id = $this->download_external_image($image_url, $product_id);
+		                if ( $attach_id ) {
+		                    $product->set_image_id( $attach_id );
+		                }
+		            }
+		        endif;
 
 	            $product_id = $product->save();
 
@@ -1156,38 +1167,35 @@ class Woo_Odoo_Integration_Scheduler {
 	            }
 	        }
 
-	        $collected_terms = [
-			    'pa_size'         => [],
-			    'pa_color'        => [],
-			    'pa_location'     => [],
-			    'pa_model'        => [],
-			    'pa_process'      => [],
-			    'pa_brand'        => [],
-			    'pa_product_type' => [],
-			    'pa_material'     => [],
-			    'pa_design_code'  => [],
-			];
+	        $collected_terms = [];
+
+			foreach ($attributes_to_sync as $slug => $data) {
+			    if ($data['enabled']) {
+			        $collected_terms['pa_' . $slug] = [];
+			    }
+			}
 
 			foreach ($variants as $variant) {
-	            if (!empty($variant['size_id']['name']))        $collected_terms['pa_size'][]        = trim($variant['size_id']['name']);
-	            if (!empty($variant['color_id']['name']))       $collected_terms['pa_color'][]       = trim($variant['color_id']['name']);
-	            if (!empty($variant['model_id']['name']))       $collected_terms['pa_model'][]       = trim($variant['model_id']['name']);
-	            if (!empty($variant['process_id']['name']))     $collected_terms['pa_process'][]     = trim($variant['process_id']['name']);
-	            if (!empty($variant['brands_id']['name']))      $collected_terms['pa_brand'][]       = trim($variant['brands_id']['name']);
-	            if (!empty($variant['type_id']['name']))        $collected_terms['pa_product_type'][]        = trim($variant['type_id']['name']);
-	            if (!empty($variant['material_id']['name']))    $collected_terms['pa_material'][]    = trim($variant['material_id']['name']);
-	            if (!empty($variant['design_code_id']['name'])) $collected_terms['pa_design_code'][] = trim($variant['design_code_id']['name']);
+			    foreach ($attributes_to_sync as $slug => $data) {
+			        if (! $data['enabled']) continue;
 
-	            if (!empty($variant['quantity_per_location'])) {
-	                foreach ($variant['quantity_per_location'] as $loc) {
-	                    $loc_name_raw = trim($loc['name']);
-	                    $loc_name = (strpos($loc_name_raw, '/Stock ') !== false)
-	                        ? trim(explode('/Stock ', $loc_name_raw)[1])
-	                        : $loc_name_raw;
-	                    $collected_terms['pa_location'][] = $loc_name;
-	                }
-	            }
-	        }
+			        $field_name = $slug . '_id';
+			        if (!empty($variant[$field_name]['name'])) {
+			            $collected_terms['pa_' . $slug][] = trim($variant[$field_name]['name']);
+			        }
+			    }
+
+			    // Tambahkan lokasi jika diaktifkan
+			    if ($attributes_to_sync['location']['enabled'] && !empty($variant['quantity_per_location'])) {
+			        foreach ($variant['quantity_per_location'] as $loc) {
+			            $loc_name_raw = trim($loc['name']);
+			            $loc_name = (strpos($loc_name_raw, '/Stock ') !== false)
+			                ? trim(explode('/Stock ', $loc_name_raw)[1])
+			                : $loc_name_raw;
+			            $collected_terms['pa_location'][] = $loc_name;
+			        }
+			    }
+			}
 
 	        // Hilangkan duplikat
 	        foreach ($collected_terms as $taxonomy => $values) {
@@ -1254,36 +1262,6 @@ class Woo_Odoo_Integration_Scheduler {
 	                        $variation = new WC_Product_Variation();
 	                        $variation->set_parent_id($existing_id ?: $product_id);
 	                    }
-			            
-						if (
-						    isset($variant['pricelists']) &&
-						    is_array($variant['pricelists']) &&
-						    isset($variant['pricelists'][0]['uuid'])
-						) {
-						    update_post_meta(
-						        $variation_id,
-						        '_odoo_pricelists',
-						        wp_json_encode($variant['pricelists'][0]['uuid'])
-						    );
-						} else {
-						    // Optionally log or handle the missing data case
-						    error_log("Pricelist UUID missing for variation ID: $variation_id");
-						}
-
-						if (
-						    isset($variant['brands_id']) &&
-						    is_array($variant['brands_id']) &&
-						    isset($variant['brands_id']['uuid'])
-						) {
-						    update_post_meta(
-						        $variation_id,
-						        '_odoo_warehouse_id',
-						        wp_json_encode($variant['brands_id']['uuid'])
-						    );
-						} else {
-						    // Optionally log or handle the missing data case
-						    error_log("Brands UUID missing for variation ID: $variation_id");
-						}
 
 	                    $variation_name = $product_name;
 	                    if ($base_color)  $variation_name .= " ({$base_color})";
@@ -1305,70 +1283,69 @@ class Woo_Odoo_Integration_Scheduler {
 
 	                    $var_attributes = [];
 
-						// Size
-						if (!empty($base_size)) {
-						    $size_term = get_term_by('name', $base_size, 'pa_size');
-						    if ($size_term) $var_attributes['pa_size'] = $size_term->slug;
-						}
+						foreach ($attributes_to_sync as $slug => $data) {
+						    if (! $data['enabled']) continue;
 
-						// Color
-						if (!empty($base_color)) {
-						    $color_term = get_term_by('name', $base_color, 'pa_color');
-						    if ($color_term) $var_attributes['pa_color'] = $color_term->slug;
-						}
+						    $taxonomy = 'pa_' . $slug;
 
-						// Model
-						if (!empty($variant['model_id']['name'])) {
-						    $model_term = get_term_by('name', trim($variant['model_id']['name']), 'pa_model');
-						    if ($model_term) $var_attributes['pa_model'] = $model_term->slug;
-						}
+						    // Ambil nama dari variant
+						    $value = '';
+						    if ($slug === 'location') {
+						        $value = $loc_name;
+						    } elseif (!empty($variant[$slug . '_id']['name'])) {
+						        $value = trim($variant[$slug . '_id']['name']);
+						    }
 
-						// Process
-						if (!empty($variant['process_id']['name'])) {
-						    $proc_term = get_term_by('name', trim($variant['process_id']['name']), 'pa_process');
-						    if ($proc_term) $var_attributes['pa_process'] = $proc_term->slug;
+						    if (!empty($value)) {
+						        $term = get_term_by('name', $value, $taxonomy);
+						        if ($term) {
+						            $var_attributes[$taxonomy] = $term->slug;
+						        }
+						    }
 						}
-
-						// Brand
-						if (!empty($variant['brands_id']['name'])) {
-						    $brand_term = get_term_by('name', trim($variant['brands_id']['name']), 'pa_brand');
-						    if ($brand_term) $var_attributes['pa_brand'] = $brand_term->slug;
-						}
-
-						// Type
-						if (!empty($variant['type_id']['name'])) {
-						    $type_term = get_term_by('name', trim($variant['type_id']['name']), 'pa_product_type');
-						    if ($type_term) $var_attributes['pa_product_type'] = $type_term->slug;
-						}
-
-						// Material
-						if (!empty($variant['material_id']['name'])) {
-						    $mat_term = get_term_by('name', trim($variant['material_id']['name']), 'pa_material');
-						    if ($mat_term) $var_attributes['pa_material'] = $mat_term->slug;
-						}
-
-						// Design Code
-						if (!empty($variant['design_code_id']['name'])) {
-						    $dc_term = get_term_by('name', trim($variant['design_code_id']['name']), 'pa_design_code');
-						    if ($dc_term) $var_attributes['pa_design_code'] = $dc_term->slug;
-						}
-
-						// Location
-						$loc_term = get_term_by('name', $loc_name, 'pa_location');
-						if ($loc_term) $var_attributes['pa_location'] = $loc_term->slug;
 
 	                    $variation->set_attributes($var_attributes);
 
-	                    // Gambar variasi
-	                    if (!empty($variant['images'][0]['url'])) {
-	                        $image_url = $variant['images'][0]['url'];
-	                        $image_id = $this->download_external_image($image_url, $variation_id);
-	                        if ($image_id) {
-	                            $variation->set_image_id($image_id);
-	                        }
-	                    }
+	                    if(true === $enable_sync_photo_product) :
+		                    // Gambar variasi
+		                    if (!empty($variant['images'][0]['url'])) {
+		                        $image_url = $variant['images'][0]['url'];
+		                        $image_id = $this->download_external_image($image_url, $variation_id);
+		                        if ($image_id) {
+		                            $variation->set_image_id($image_id);
+		                        }
+		                    }
+		                endif;
 
 	                    $saved_id = $variation->save();
+
+	                    if (
+						    isset($variant['pricelists']) &&
+						    is_array($variant['pricelists']) &&
+						    isset($variant['pricelists'][0]['uuid'])
+						) {
+						    update_post_meta(
+						        $saved_id,
+						        '_odoo_pricelists',
+						        $variant['pricelists'][0]['uuid']
+						    );
+						} else {
+						    // Optionally log or handle the missing data case
+						    error_log("Pricelist UUID missing for variation ID: $variation_id");
+						}
+
+						if (
+						    isset($loc['uuid'])
+						) {
+						    update_post_meta(
+						        $saved_id,
+						        '_odoo_warehouse_id',
+						        $loc['uuid']
+						    );
+						} else {
+						    // Optionally log or handle the missing data case
+						    error_log("Warehouse UUID missing for variation ID: $variation_id");
+						}
 
 	                    if ($var_update) {
 	                        $results['details'][] = array(
@@ -1404,40 +1381,47 @@ class Woo_Odoo_Integration_Scheduler {
 	private function ensure_product_attribute($name, $slug) {
 	    global $wpdb;
 
+	    // Ambil data atribut berdasarkan slug
 	    $attr = $wpdb->get_row( $wpdb->prepare(
 	        "SELECT * FROM {$wpdb->prefix}woocommerce_attribute_taxonomies WHERE attribute_name = %s",
 	        $slug
-	    ) );
+	    ));
 
-	    if ( ! $attr ) {
-		    wc_create_attribute( array(
-		        'slug'    => $slug, 
-		        'name'    => ucfirst( $name ),
-		        'type'    => 'select',
-		        'order_by'=> 'menu_order',
-		        'has_archives' => false,
-		    ) );
+	    // Periksa apakah sync untuk atribut ini diaktifkan di pengaturan tema
+	    $enable_sync_attribut = boolval(carbon_get_theme_option('enable_sync_attribut_'.$slug));
 
-		    delete_transient('wc_attribute_taxonomies');
+	    // Jika atribut belum ada dan sync diaktifkan, buat atribut baru
+	    if ( ! $attr && $enable_sync_attribut ) {
+	        wc_create_attribute( array(
+	            'slug'        => $slug, 
+	            'name'        => ucfirst( $name ),
+	            'type'        => 'select',
+	            'order_by'    => 'menu_order',
+	            'has_archives'=> false,
+	        ));
 
-		    if ( function_exists('wc_clean_attribute_cache') ) {
-		        wc_clean_attribute_cache();
-		    } elseif ( method_exists('WC_Cache_Helper', 'invalidate_cache_group') ) {
-		        WC_Cache_Helper::invalidate_cache_group('woocommerce-attributes');
-		    }
+	        // Bersihkan cache atribut
+	        delete_transient('wc_attribute_taxonomies');
 
-		    register_taxonomy(
-		        'pa_' . $slug,
-		        array('product'),
-		        array(
-		            'hierarchical' => false,
-		            'label'        => ucfirst( $name ),
-		            'query_var'    => true,
-		            'rewrite'      => false,
-		        )
-		    );
-		}
+	        // Perbarui cache untuk atribut
+	        if ( function_exists('wc_clean_attribute_cache') ) {
+	            wc_clean_attribute_cache();
+	        } elseif ( method_exists('WC_Cache_Helper', 'invalidate_cache_group') ) {
+	            WC_Cache_Helper::invalidate_cache_group('woocommerce-attributes');
+	        }
 
+	        // Daftarkan taksonomi untuk atribut produk
+	        register_taxonomy(
+	            'pa_' . $slug,
+	            array('product'),
+	            array(
+	                'hierarchical' => false,
+	                'label'        => ucfirst( $name ),
+	                'query_var'    => true,
+	                'rewrite'      => false,
+	            )
+	        );
+	    }
 	}
 
 	public function download_external_image($image_url, $post_id = 0) {

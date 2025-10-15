@@ -64,7 +64,7 @@ class Woo_Odoo_Integration_CLI_Product_Sync {
 		} );
 
 		// WP_CLI::log( $product_groups );
-		// WP_CLI::log( print_r( $product_groups, true ) );
+		WP_CLI::log( print_r( $product_groups, true ) );
 
 		$results = $scheduler->sync_odoo_products_to_wc( $product_groups );
 		
