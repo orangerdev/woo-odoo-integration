@@ -79,8 +79,17 @@ class Woo_Odoo_Integration_Scheduler {
 		$this->version = $version;
 
 		// Allow customization of chunk settings via filters
-		$this->chunk_size = apply_filters( 'woo_odoo_integration_auto_sync_chunk_size', $this->chunk_size );
-		$this->chunk_interval = apply_filters( 'woo_odoo_integration_auto_sync_chunk_interval', $this->chunk_interval );
+		$this->chunk_size = get_option('woo_odoo_auto_sync_chunk_size'); //apply_filters( 'woo_odoo_integration_auto_sync_chunk_size', $this->chunk_size );
+		$this->chunk_interval = get_option('woo_odoo_auto_sync_chunk_interval'); //apply_filters( 'woo_odoo_integration_auto_sync_chunk_interval', $this->chunk_interval );
+
+		add_action( 'init', function() {
+		    if ( isset($_GET['test_sync']) && current_user_can('manage_options') ) {
+		        $this->schedule_immediate_test();
+		        echo 'Manual test schedule created!';
+		        exit;
+		    }
+		}); // /?test_sync=1
+
 	}
 
 	/**
@@ -194,6 +203,7 @@ class Woo_Odoo_Integration_Scheduler {
 	    $this->start_auto_sync('price');
 	}
 
+
 	/**
 	 * Schedule daily sync at midnight
 	 *
@@ -217,29 +227,30 @@ class Woo_Odoo_Integration_Scheduler {
 	        $this->log( 'warning', 'Invalid timezone, using UTC: ' . $e->getMessage(), array( 'source' => 'woo-odoo-scheduler' ) );
 	    }
 
-	    // Hitung waktu tengah malam berikutnya dalam timezone WP, konversi ke UTC
+	    // Hitung waktu tengah malam berikutnya
 	    $now = new DateTime( 'now', $timezone );
 	    $midnight = new DateTime( 'tomorrow midnight', $timezone );
 	    $midnight->setTimezone( new DateTimeZone( 'UTC' ) );
 	    $timestamp = $midnight->getTimestamp();
 
-	    // Jadwalkan event harian untuk stock dan price
+	    // Event 1: Product sync (jam 00:00)
 	    if ( ! wp_next_scheduled( 'woo_odoo_auto_sync_product' ) ) {
 	        wp_schedule_event( $timestamp, 'daily', 'woo_odoo_auto_sync_product' );
 	    }
 
+	    // Event 2: Stock sync (jam 02:00)
 	    if ( ! wp_next_scheduled( 'woo_odoo_auto_sync_product_stock' ) ) {
-	        wp_schedule_event( $timestamp, 'daily', 'woo_odoo_auto_sync_product_stock' );
+	        wp_schedule_event( $timestamp + 2 * HOUR_IN_SECONDS, 'daily', 'woo_odoo_auto_sync_product_stock' );
 	    }
 
+	    // Event 3: Price sync (jam 04:00)
 	    if ( ! wp_next_scheduled( 'woo_odoo_auto_sync_product_price' ) ) {
-	        wp_schedule_event( $timestamp, 'daily', 'woo_odoo_auto_sync_product_price' );
+	        wp_schedule_event( $timestamp + 4 * HOUR_IN_SECONDS, 'daily', 'woo_odoo_auto_sync_product_price' );
 	    }
 
 	    $this->log( 'info', sprintf(
-	        'Scheduled daily product sync at midnight (%s timezone). Next run: %s UTC',
-	        $timezone_string,
-	        $midnight->format( 'Y-m-d H:i:s' )
+	        'Scheduled daily sync events: Product(00:00), Stock(+2h), Price(+4h) [%s timezone]',
+	        $timezone_string
 	    ), array( 'source' => 'woo-odoo-scheduler' ) );
 	}
 
@@ -285,6 +296,7 @@ class Woo_Odoo_Integration_Scheduler {
 
 	    if($mode === 'product') :
 			$product_groups = woo_odoo_integration_api_get_product_groups();
+		    // error_log(print_r($product_groups, true));
 
 		    $total_products = count( $product_groups );
 		    $chunks = array_chunk( $product_groups, $this->chunk_size );
@@ -761,9 +773,21 @@ class Woo_Odoo_Integration_Scheduler {
 
 		if ( is_array( $crons ) ) {
 			foreach ( $crons as $timestamp => $cron ) {
-				if ( isset( $cron['woo_odoo_auto_sync_product_chunk'] ) ) {
-					foreach ( $cron['woo_odoo_auto_sync_product_chunk'] as $key => $job ) {
-						wp_unschedule_event( $timestamp, 'woo_odoo_auto_sync_product_chunk', $job['args'] );
+				if ( isset( $cron['woo_odoo_auto_sync_product_chunk_product'] ) ) {
+					foreach ( $cron['woo_odoo_auto_sync_product_chunk_product'] as $key => $job ) {
+						wp_unschedule_event( $timestamp, 'woo_odoo_auto_sync_product_chunk_product', $job['args'] );
+					}
+				}
+
+				if ( isset( $cron['woo_odoo_auto_sync_product_chunk_stock'] ) ) {
+					foreach ( $cron['woo_odoo_auto_sync_product_chunk_stock'] as $key => $job ) {
+						wp_unschedule_event( $timestamp, 'woo_odoo_auto_sync_product_chunk_stock', $job['args'] );
+					}
+				}
+
+				if ( isset( $cron['woo_odoo_auto_sync_product_chunk_price'] ) ) {
+					foreach ( $cron['woo_odoo_auto_sync_product_chunk_price'] as $key => $job ) {
+						wp_unschedule_event( $timestamp, 'woo_odoo_auto_sync_product_chunk_price', $job['args'] );
 					}
 				}
 			}
@@ -923,7 +947,6 @@ class Woo_Odoo_Integration_Scheduler {
 		return true;
 	}
 
-
 	/**
 	 * Unschedule all sync events
 	 *
@@ -965,7 +988,101 @@ class Woo_Odoo_Integration_Scheduler {
 			$this->chunk_interval
 		), array( 'source' => 'woo-odoo-scheduler' ) );
 	}
-	// ...existing code...
+	
+	/**
+	 * Get or create WC product category with optional parent.
+	 * Returns term_id or false on failure.
+	 */
+	private function get_or_create_wc_category( $name, $uuid = '', $parent_id = 0 ) {
+	    static $term_cache = [];
+
+	    $cache_key = $uuid ? 'u:' . $uuid : 'n:' . md5( $name . '|' . intval( $parent_id ) );
+	    if ( isset( $term_cache[ $cache_key ] ) ) {
+	        return $term_cache[ $cache_key ];
+	    }
+
+	    if ( $uuid ) {
+	        $terms = get_terms( array(
+	            'taxonomy'   => 'product_cat',
+	            'hide_empty' => false,
+	            'meta_query' => array(
+	                array(
+	                    'key'   => 'odoo_uuid',
+	                    'value' => $uuid,
+	                ),
+	            ),
+	            'number' => 1,
+	        ) );
+
+	        if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
+	            $term_cache[ $cache_key ] = $terms[0]->term_id;
+	            return $term_cache[ $cache_key ];
+	        }
+	    }
+
+	    $found = get_terms( array(
+	        'taxonomy'   => 'product_cat',
+	        'hide_empty' => false,
+	        'name'       => $name,
+	        'parent'     => $parent_id,
+	        'number'     => 1,
+	    ) );
+
+	    if ( ! is_wp_error( $found ) && ! empty( $found ) ) {
+	        $term_id = $found[0]->term_id;
+	        if ( $uuid ) update_term_meta( $term_id, 'odoo_uuid', $uuid );
+	        $term_cache[ $cache_key ] = $term_id;
+	        return $term_id;
+	    }
+
+	    $insert = wp_insert_term( $name, 'product_cat', array( 'parent' => $parent_id ) );
+	    if ( is_wp_error( $insert ) ) {
+	        return false;
+	    }
+
+	    $term_id = intval( $insert['term_id'] );
+
+	    if ( $uuid ) update_term_meta( $term_id, 'odoo_uuid', $uuid );
+
+	    $term_cache[ $cache_key ] = $term_id;
+	    return $term_id;
+	}
+
+	private function build_category_tree_and_get_id($cat, $all_categories, &$cache) {
+	    $uuid = $cat['uuid'];
+	    $name = $cat['name'];
+
+	    if (isset($cache[$uuid])) {
+	        return $cache[$uuid];
+	    }
+
+	    $parent_term_id = 0;
+
+	    if (!empty($cat['parent_id']) && is_array($cat['parent_id'])) {
+
+	        $parent_uuid = $cat['parent_id']['uuid'];
+
+	        foreach ($all_categories as $c) {
+	            if ($c['uuid'] === $parent_uuid) {
+	                $parent_term_id = $this->build_category_tree_and_get_id($c, $all_categories, $cache);
+	            }
+	        }
+	    }
+
+	    $term_id = $this->get_or_create_wc_category(
+	        $name,
+	        $uuid,
+	        $parent_term_id
+	    );
+
+	    if ($term_id) {
+	        $cache[$uuid] = $term_id;
+	    }
+
+	    return $term_id;
+	}
+
+
 	/**
 	 * Sync Odoo products to WooCommerce
 	 *
@@ -999,6 +1116,29 @@ class Woo_Odoo_Integration_Scheduler {
 		    'design_code'  => ['label' => 'Design Code',  'enabled' => boolval(carbon_get_theme_option('enable_sync_attribut_design_code'))],
 		];
 
+		$attributes_used_variation = [
+		    'size'         => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_size'))],
+		    'color'        => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_color'))],
+		    'location'     => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_location'))],
+		    'model'        => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_model'))],
+		    'process'      => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_process'))],
+		    'brand'        => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_brand'))],
+		    'product_type' => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_product_type'))],
+		    'material'     => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_material'))],
+		    'design_code'  => ['enabled' => boolval(carbon_get_theme_option('enable_user_variation_attribut_design_code'))],
+		];
+		$attributes_visibility = [
+		    'size'         => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_size'))],
+		    'color'        => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_color'))],
+		    'location'     => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_location'))],
+		    'model'        => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_model'))],
+		    'process'      => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_process'))],
+		    'brand'        => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_brand'))],
+		    'product_type' => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_product_type'))],
+		    'material'     => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_material'))],
+		    'design_code'  => ['enabled' => boolval(carbon_get_theme_option('enable_visible_attribut_design_code'))],
+		];
+
 		foreach ($attributes_to_sync as $slug => $data) {
 		    if ($data['enabled']) {
 		        $this->ensure_product_attribute($data['label'], $slug);
@@ -1019,18 +1159,17 @@ class Woo_Odoo_Integration_Scheduler {
 		    'design_code_id' => 'Design Code',
 		) );
 
-	    // Helper untuk cek perubahan data produk
 	    $has_changes = function( $product, $new_data ) {
 	        foreach ( $new_data as $key => $value ) {
 	            $getter = "get_" . $key;
 	            if ( method_exists( $product, $getter ) ) {
 	                $old = $product->$getter();
 	                if ( $old != $value ) {
-	                    return true; // ada perubahan
+	                    return true; 
 	                }
 	            }
 	        }
-	        return false; // semua sama
+	        return false;
 	    };
 
 	    if ( $logger ) {
@@ -1052,7 +1191,6 @@ class Woo_Odoo_Integration_Scheduler {
 
 	    // $counter = 0;
 	    // $limit   = 5; // limit untuk testing
-
 	    foreach ( $product_groups as $product_data ) {
 
 	        $product_name = $product_data['name'];
@@ -1060,18 +1198,35 @@ class Woo_Odoo_Integration_Scheduler {
 	        $product_desc = $product_data['description'];
 	        $short_desc   = $product_data['short_description'];
 	        $variants     = $product_data['variants'];
-	        $product_id = wc_get_product_id_by_sku( $product_data['uuid'] );
+	        $product_id   = wc_get_product_id_by_sku( $product_data['uuid'] );
 
 	        // --- Cek produk utama ---
-	        $existing_id = wc_get_product_id_by_sku($product_data['uuid']);
-	        $is_update   = false;
+	        $existing_id  = wc_get_product_id_by_sku($product_data['uuid']);
+	        $is_update    = false;
 
-	        if ($existing_id) {
-	            $product   = new WC_Product_Variable($existing_id);
-	            $is_update = true;
-	        } else {
-	            $product   = new WC_Product_Variable();
-	        }
+			$has_variation_attribute = false;
+
+			foreach ($attributes_used_variation as $slug => $setting) {
+			    if (!empty($setting['enabled']) && $setting['enabled'] === true) {
+			        // pastikan atribut ini juga aktif disinkronkan
+			        if (!empty($attributes_to_sync[$slug]['enabled']) && $attributes_to_sync[$slug]['enabled'] === true) {
+			            $has_variation_attribute = true;
+			            break;
+			        }
+			    }
+			}
+
+			// Tentukan tipe produk berdasarkan hasil di atas
+			if ($existing_id) {
+			    $product = $has_variation_attribute
+			        ? new WC_Product_Variable($existing_id)
+			        : new WC_Product_Simple($existing_id);
+			    $is_update = true;
+			} else {
+			    $product = $has_variation_attribute
+			        ? new WC_Product_Variable()
+			        : new WC_Product_Simple();
+			}
 
 	        // Data baru produk utama
 	        $new_product_data = [
@@ -1079,7 +1234,7 @@ class Woo_Odoo_Integration_Scheduler {
 	            'sku'               => $product_data['uuid'],
 	            'slug'              => $product_slug,
 	            'description'       => $product_desc,
-	            'short_description' => $short_desc,
+	            'short_description' => $short_desc
 	        ];
 
 	        // $quantity = null;
@@ -1101,7 +1256,6 @@ class Woo_Odoo_Integration_Scheduler {
 			    $new_product_data['stock_quantity'] = $quantity;
 			}
 
-	        // --- Check skip ---
 	        if ( $is_update && ! $has_changes($product, $new_product_data) ) {
 	            $results['skipped']++;
 	            $results['details'][] = array(
@@ -1111,7 +1265,38 @@ class Woo_Odoo_Integration_Scheduler {
 	            if ($logger) $logger->info("Skipped product {$product_data['uuid']}", array('source'=>'woo-odoo-product-sync'));
 	        } else {
 	            $product->set_name($product_name);
-	            $product->set_sku($product_data['uuid']);
+
+				$sku_to_set = $product_data['uuid'];
+				$existing_sku_id = wc_get_product_id_by_sku($sku_to_set);
+
+				if ($existing_sku_id && $existing_sku_id !== $product->get_id()) {
+				    $results['errors']++;
+				    $results['details'][] = array(
+				        'error'      => 'Duplicate SKU detected',
+				        'duplicate'  => $sku_to_set,
+				        'product_id' => $existing_sku_id,
+				    );
+				    if ($logger) {
+				        $logger->error("Duplicate SKU detected: {$sku_to_set}", array('source' => 'woo-odoo-product-sync'));
+				    }
+				    continue;
+				}
+
+				try {
+				    $product->set_sku($sku_to_set);
+				} catch (WC_Data_Exception $e) {
+				    $results['errors']++;
+				    $results['details'][] = array(
+				        'error' => 'Failed to set SKU',
+				        'sku'   => $sku_to_set,
+				        'msg'   => $e->getMessage()
+				    );
+				    if ($logger) {
+				        $logger->error("Failed to set SKU {$sku_to_set}: " . $e->getMessage(), array('source'=>'woo-odoo-product-sync'));
+				    }
+				    continue;
+				}
+
 	            $product->set_slug($product_slug);
 	            $product->set_description($product_desc);
 	            $product->set_short_description($short_desc);
@@ -1119,25 +1304,28 @@ class Woo_Odoo_Integration_Scheduler {
                 $product->set_stock_quantity($quantity);
                 $product->set_stock_status($quantity > 0 ? 'instock' : 'outofstock');
 
-	            // Set category
-	            if ( isset( $product_data['variants'][0]['category'] ) && ! empty( $product_data['variants'][0]['category'] ) ) {
-	                $cat_name = $product_data['variants'][0]['category'];
-	                $term = get_term_by( 'name', $cat_name, 'product_cat' );
-	                if ( ! $term ) {
-	                    $term = wp_insert_term( $cat_name, 'product_cat' );
-	                    if ( is_wp_error( $term ) ) {
-	                        $results['errors']++;
-	                        $results['details'][] = array( 'error' => 'Failed to create category', 'category' => $cat_name, 'msg' => $term->get_error_message() );
-	                        continue;
-	                    }
-	                    $term_id = $term['term_id'];
-	                } else {
-	                    $term_id = $term->term_id;
-	                }
-	                $product->set_category_ids( array( $term_id ) );
-	            }
+	            if (!empty($product_data['variants'][0]['product_categories'])) {
 
-	            if(true === $enable_sync_photo_product) :
+				    $all_categories = $product_data['variants'][0]['product_categories'];
+				    $cache = [];
+				    $assigned_term_ids = [];
+
+				    foreach ($all_categories as $cat) {
+				        $term_id = $this->build_category_tree_and_get_id(
+				            $cat,
+				            $all_categories,
+				            $cache
+				        );
+
+				        if ($term_id) {
+				            $assigned_term_ids[] = $term_id;
+				        }
+				    }
+
+				    $product->set_category_ids(array_unique($assigned_term_ids));
+				}
+
+	            if (true === $enable_sync_photo_product) :
 		            // Set main image
 		            if ( isset( $product_data['variants'][0]['images'][0]['url'] ) ) {
 		                $image_url = $product_data['variants'][0]['images'][0]['url'];
@@ -1166,6 +1354,23 @@ class Woo_Odoo_Integration_Scheduler {
 	                if ($logger) $logger->info("Created product {$product_data['uuid']}", array('source'=>'woo-odoo-product-sync'));
 	            }
 	        }
+	        if (true === $enable_sync_photo_product) :
+			    if (isset($product_data['variants'][0]['images'][0]['url'])) :
+			        $image_url = $product_data['variants'][0]['images'][0]['url'];
+			        $attach_id = $this->download_external_image($image_url, $product_id);
+			        if ($attach_id) {
+			            $product->set_image_id($attach_id);
+			        }			        
+			    endif;
+			// else:
+		    //     $old_image_id = $product->get_image_id();
+
+			//     if ($old_image_id) {
+			//         $this->remove_attached_image($old_image_id);
+			//     }
+
+			//     $product->set_image_id(null);
+			endif;
 
 	        $collected_terms = [];
 
@@ -1185,7 +1390,6 @@ class Woo_Odoo_Integration_Scheduler {
 			        }
 			    }
 
-			    // Tambahkan lokasi jika diaktifkan
 			    if ($attributes_to_sync['location']['enabled'] && !empty($variant['quantity_per_location'])) {
 			        foreach ($variant['quantity_per_location'] as $loc) {
 			            $loc_name_raw = trim($loc['name']);
@@ -1197,17 +1401,14 @@ class Woo_Odoo_Integration_Scheduler {
 			    }
 			}
 
-	        // Hilangkan duplikat
 	        foreach ($collected_terms as $taxonomy => $values) {
 	            $collected_terms[$taxonomy] = array_unique($values);
 	        }
 
-	        // Assign attributes ke produk utama
 	        $attributes_data = [];
 	        foreach ($collected_terms as $taxonomy => $terms) {
 	            if (empty($terms)) continue;
 
-	            // Pastikan terms sudah ada
 	            $term_ids = [];
 	            foreach ($terms as $term) {
 	                $term_obj = term_exists($term, $taxonomy);
@@ -1223,8 +1424,19 @@ class Woo_Odoo_Integration_Scheduler {
 	            $attribute->set_id( wc_attribute_taxonomy_id_by_name( $taxonomy ) );
 	            $attribute->set_name( $taxonomy );
 	            $attribute->set_options( $term_ids );
-	            $attribute->set_visible( true );
-	            $attribute->set_variation( true );
+
+	            $slug_key = str_replace('pa_', '', $taxonomy);
+				$is_visibility = isset($attributes_visibility[$slug_key]['enabled'])
+				    ? $attributes_visibility[$slug_key]['enabled']
+				    : false;
+
+				$attribute->set_visible( $is_visibility );
+	            
+				$is_variation = isset($attributes_used_variation[$slug_key]['enabled'])
+				    ? $attributes_used_variation[$slug_key]['enabled']
+				    : false;
+
+				$attribute->set_variation( $is_variation );
 
 	            $attributes_data[$taxonomy] = $attribute;
 	        }
@@ -1234,7 +1446,10 @@ class Woo_Odoo_Integration_Scheduler {
 	            $product->save();
 	        }
 
-	        // --- Variations ---
+	        if ( ! $has_variation_attribute ) {
+			    continue;
+			}
+
 	        foreach ($variants as $variant) {
 	            $base_price = !empty($variant['pricelists'][0]['sale_price']) ? $variant['pricelists'][0]['sale_price'] : 0;
 	            $base_size  = !empty($variant['size_id']['name']) ? trim($variant['size_id']['name']) : '';
@@ -1248,8 +1463,8 @@ class Woo_Odoo_Integration_Scheduler {
 	                        : $loc_name_raw;
 	                    $loc_qty = intval($loc['quantity']);
 
-	                    // 🔥 SKU unik
 	                    $sku_variation = $variant['uuid'] . '-' . sanitize_title($loc_name);
+	                    // $sku_variation = $product_data['uuid'] . '-' . $variant['uuid'] . '-' . sanitize_title($loc_name);
 	                    // $sku_variation = $variant['uuid'];
 
 	                    $variation_id = wc_get_product_id_by_sku($sku_variation);
@@ -1275,7 +1490,22 @@ class Woo_Odoo_Integration_Scheduler {
 	                    if ($loc_name)    $variation_name .= " ({$loc_name})";
 
 	                    $variation->set_name($variation_name);
-	                    $variation->set_sku($sku_variation);
+	                    try {
+						    $variation->set_sku($sku_variation);
+						} catch (WC_Data_Exception $e) {
+						    $results['errors']++;
+						    $results['details'][] = array(
+						        'error'         => 'Duplicate variation SKU',
+						        'sku'           => $sku_variation,
+						        'variation_id'  => $variation->get_id(),
+						        'msg'           => $e->getMessage(),
+						    );
+						    if ($logger) {
+						        $logger->error("Duplicate SKU on variation: {$sku_variation} - " . $e->getMessage(), array('source' => 'woo-odoo-product-sync'));
+						    }
+						    continue;
+						}
+
 	                    $variation->set_manage_stock(true);
 	                    $variation->set_stock_quantity($loc_qty);
 	                    $variation->set_stock_status($loc_qty > 0 ? 'instock' : 'outofstock');
@@ -1306,16 +1536,23 @@ class Woo_Odoo_Integration_Scheduler {
 
 	                    $variation->set_attributes($var_attributes);
 
-	                    if(true === $enable_sync_photo_product) :
-		                    // Gambar variasi
-		                    if (!empty($variant['images'][0]['url'])) {
-		                        $image_url = $variant['images'][0]['url'];
-		                        $image_id = $this->download_external_image($image_url, $variation_id);
-		                        if ($image_id) {
-		                            $variation->set_image_id($image_id);
-		                        }
-		                    }
-		                endif;
+	                    if (true === $enable_sync_photo_product) :
+						    if (!empty($variant['images'][0]['url'])) :
+						        $image_url = $variant['images'][0]['url'];
+						        $image_id = $this->download_external_image($image_url, $variation_id);
+						        if ($image_id) {
+						            $variation->set_image_id($image_id);
+						        }
+						    endif;
+						// else:
+					    //     $old_image_id = $variation->get_image_id();
+
+						//     if ($old_image_id) {
+						//         $this->remove_attached_image($old_image_id);
+						//     }
+
+						//     $variation->set_image_id(null);
+						endif;
 
 	                    $saved_id = $variation->save();
 
@@ -1329,9 +1566,6 @@ class Woo_Odoo_Integration_Scheduler {
 						        '_odoo_pricelists',
 						        $variant['pricelists'][0]['uuid']
 						    );
-						} else {
-						    // Optionally log or handle the missing data case
-						    error_log("Pricelist UUID missing for variation ID: $variation_id");
 						}
 
 						if (
@@ -1342,9 +1576,6 @@ class Woo_Odoo_Integration_Scheduler {
 						        '_odoo_warehouse_id',
 						        $loc['uuid']
 						    );
-						} else {
-						    // Optionally log or handle the missing data case
-						    error_log("Warehouse UUID missing for variation ID: $variation_id");
 						}
 
 	                    if ($var_update) {
@@ -1375,22 +1606,31 @@ class Woo_Odoo_Integration_Scheduler {
 	    }
 
 	    return $results;
+
+	}
+
+	/**
+	 * Remove attached image from media library by attachment ID
+	 *
+	 * @param int $attachment_id
+	 */
+	public function remove_attached_image($attachment_id) {
+	    if (wp_attachment_is_image($attachment_id)) {
+	        wp_delete_attachment($attachment_id, true);
+	    }
 	}
 
 	// Tambahkan helper di class yang sama
 	private function ensure_product_attribute($name, $slug) {
 	    global $wpdb;
 
-	    // Ambil data atribut berdasarkan slug
 	    $attr = $wpdb->get_row( $wpdb->prepare(
 	        "SELECT * FROM {$wpdb->prefix}woocommerce_attribute_taxonomies WHERE attribute_name = %s",
 	        $slug
 	    ));
 
-	    // Periksa apakah sync untuk atribut ini diaktifkan di pengaturan tema
 	    $enable_sync_attribut = boolval(carbon_get_theme_option('enable_sync_attribut_'.$slug));
 
-	    // Jika atribut belum ada dan sync diaktifkan, buat atribut baru
 	    if ( ! $attr && $enable_sync_attribut ) {
 	        wc_create_attribute( array(
 	            'slug'        => $slug, 
@@ -1400,17 +1640,14 @@ class Woo_Odoo_Integration_Scheduler {
 	            'has_archives'=> false,
 	        ));
 
-	        // Bersihkan cache atribut
 	        delete_transient('wc_attribute_taxonomies');
 
-	        // Perbarui cache untuk atribut
 	        if ( function_exists('wc_clean_attribute_cache') ) {
 	            wc_clean_attribute_cache();
 	        } elseif ( method_exists('WC_Cache_Helper', 'invalidate_cache_group') ) {
 	            WC_Cache_Helper::invalidate_cache_group('woocommerce-attributes');
 	        }
 
-	        // Daftarkan taksonomi untuk atribut produk
 	        register_taxonomy(
 	            'pa_' . $slug,
 	            array('product'),
@@ -1506,6 +1743,38 @@ class Woo_Odoo_Integration_Scheduler {
 		$query = $wpdb->prepare( "SELECT ID FROM $wpdb->posts WHERE guid=%s AND post_type='attachment'", $image_url );
 		$id = $wpdb->get_var( $query );
 		return $id ? intval( $id ) : false;
+	}
+
+	public function schedule_immediate_test() {
+	    // Bersihkan event lama dulu biar gak dobel
+	    wp_clear_scheduled_hook( 'woo_odoo_auto_sync_product' );
+	    wp_clear_scheduled_hook( 'woo_odoo_auto_sync_product_stock' );
+	    wp_clear_scheduled_hook( 'woo_odoo_auto_sync_product_price' );
+
+	    // Ambil timezone WP
+	    $timezone_string = get_option( 'timezone_string', 'UTC' );
+	    try {
+	        $timezone = new DateTimeZone( $timezone_string );
+	    } catch (Exception $e) {
+	        $timezone = new DateTimeZone( 'UTC' );
+	    }
+
+	    // Jadwalkan mulai dari waktu sekarang (UTC)
+	    $now = new DateTime( 'now', $timezone );
+	    $now_utc = clone $now;
+	    $now_utc->setTimezone( new DateTimeZone( 'UTC' ) );
+	    $timestamp = $now_utc->getTimestamp();
+
+	    // Jadwal: sekarang + jeda 2 jam antar event
+	    wp_schedule_single_event( $timestamp, 'woo_odoo_auto_sync_product' );
+	    wp_schedule_single_event( $timestamp + 2 * HOUR_IN_SECONDS, 'woo_odoo_auto_sync_product_stock' );
+	    wp_schedule_single_event( $timestamp + 4 * HOUR_IN_SECONDS, 'woo_odoo_auto_sync_product_price' );
+
+	    $this->log( 'info', sprintf(
+	        '📅 Test schedule created starting now (%s). Product=now, Stock=+2h, Price=+4h (%s timezone)',
+	        $now->format('Y-m-d H:i:s'),
+	        $timezone_string
+	    ), array( 'source' => 'woo-odoo-scheduler' ) );
 	}
 }
 

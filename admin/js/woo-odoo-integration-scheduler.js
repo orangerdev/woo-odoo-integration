@@ -84,6 +84,7 @@
 			$.ajax({
 				url: wooOdooScheduler.ajax_url,
 				type: "POST",
+				dataType: "json", // penting agar otomatis parse JSON
 				data: {
 					action: "woo_odoo_trigger_auto_sync",
 					nonce: wooOdooScheduler.nonce,
@@ -91,7 +92,7 @@
 				success: function (response) {
 					if (response.success) {
 						$feedback.html(
-							'<div class="notice-success"><p>' + response.data + "</p></div>",
+							'<div class="notice-success"><p>' + response.data + "</p></div>"
 						);
 
 						// Refresh status after a short delay
@@ -105,19 +106,31 @@
 						$feedback.html(
 							'<div class="notice-error"><p>' +
 								(response.data || wooOdooScheduler.strings.error) +
-								"</p></div>",
+								"</p></div>"
 						);
 						$button
 							.prop("disabled", false)
 							.text(wooOdooScheduler.strings.trigger_sync || "Start Sync Now");
 					}
 				},
-				error: function () {
-					$feedback.html(
-						'<div class="notice-error"><p>' +
-							wooOdooScheduler.strings.error +
-							"</p></div>",
-					);
+				error: function (xhr, status, error) {
+					// Tangkap semua informasi penting
+					let errorMessage = `
+						<b>AJAX Request Failed</b><br>
+						Status: ${status}<br>
+						Error: ${error}<br>
+						HTTP Code: ${xhr.status}<br>
+						Response:<br>
+						<pre style="max-height:200px;overflow:auto;background:#f6f6f6;border:1px solid #ddd;padding:5px;">${xhr.responseText}</pre>
+					`;
+
+					console.error("Woo Odoo AJAX Error:", {
+						status: status,
+						error: error,
+						xhr: xhr,
+					});
+
+					$feedback.html('<div class="notice-error"><p>' + errorMessage + "</p></div>");
 					$button
 						.prop("disabled", false)
 						.text(wooOdooScheduler.strings.trigger_sync || "Start Sync Now");
@@ -145,6 +158,7 @@
 			$.ajax({
 				url: wooOdooScheduler.ajax_url,
 				type: "POST",
+				dataType: "json",
 				data: {
 					action: "woo_odoo_clear_sync_queue",
 					nonce: wooOdooScheduler.nonce,
@@ -152,7 +166,7 @@
 				success: function (response) {
 					if (response.success) {
 						$feedback.html(
-							'<div class="notice-success"><p>' + response.data + "</p></div>",
+							'<div class="notice-success"><p>' + response.data + "</p></div>"
 						);
 
 						// Refresh status
@@ -161,20 +175,32 @@
 						// Stop status polling
 						SchedulerAdmin.stopStatusPolling();
 					} else {
-						$feedback.html(
+												$feedback.html(
 							'<div class="notice-error"><p>' +
 								(response.data || wooOdooScheduler.strings.error) +
-								"</p></div>",
+								"</p></div>"
 						);
+
 						$button.prop("disabled", false).text("Cancel Current Sync");
 					}
 				},
-				error: function () {
-					$feedback.html(
-						'<div class="notice-error"><p>' +
-							wooOdooScheduler.strings.error +
-							"</p></div>",
-					);
+				error: function (xhr, status, error) {
+					let errorMessage = `
+						<b>AJAX Request Failed</b><br>
+						Status: ${status}<br>
+						Error: ${error}<br>
+						HTTP Code: ${xhr.status}<br>
+						Response:<br>
+						<pre style="max-height:200px;overflow:auto;background:#f6f6f6;border:1px solid #ddd;padding:5px;">${xhr.responseText}</pre>
+					`;
+
+					console.error("Woo Odoo AJAX Error:", {
+						status: status,
+						error: error,
+						xhr: xhr,
+					});
+
+					$feedback.html('<div class="notice-error"><p>' + errorMessage + "</p></div>");
 					$button.prop("disabled", false).text("Cancel Current Sync");
 				},
 			});
@@ -197,6 +223,7 @@
 			$.ajax({
 				url: wooOdooScheduler.ajax_url,
 				type: "POST",
+				dataType: "json",
 				data: {
 					action: "woo_odoo_get_sync_status",
 					nonce: wooOdooScheduler.nonce,
@@ -220,10 +247,32 @@
 						}
 					} else {
 						console.error("Failed to refresh status:", response.data);
+						$("#manual-controls-feedback").html(
+							'<div class="notice-error"><p>' +
+								(response.data || wooOdooScheduler.strings.error) +
+								"</p></div>"
+						);
 					}
 				},
-				error: function () {
-					console.error("AJAX error while refreshing status");
+				error: function (xhr, status, error) {
+					let errorMessage = `
+						<b>AJAX Request Failed</b><br>
+						Status: ${status}<br>
+						Error: ${error}<br>
+						HTTP Code: ${xhr.status}<br>
+						Response:<br>
+						<pre style="max-height:200px;overflow:auto;background:#f6f6f6;border:1px solid #ddd;padding:5px;">${xhr.responseText}</pre>
+					`;
+
+					console.error("Woo Odoo AJAX Error (refreshStatus):", {
+						status: status,
+						error: error,
+						xhr: xhr,
+					});
+
+					$("#manual-controls-feedback").html(
+						'<div class="notice-error"><p>' + errorMessage + "</p></div>"
+					);
 				},
 				complete: function () {
 					// Restore button state

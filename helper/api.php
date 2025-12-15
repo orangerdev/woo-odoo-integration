@@ -1160,52 +1160,121 @@ add_action( 'admin_init', function () {
  *
  * @return   array|WP_Error          Product stock data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_get_product_stock() {
-	// Fire before get product stock hook
-	do_action( 'woo_odoo_integration_before_get_product_stock' );
+function woo_odoo_integration_api_get_product_stock( $limit = 99999 ) {
+    // Fire before get product stock hook
+    do_action( 'woo_odoo_integration_before_get_product_stock' );
 
-	$logger = wc_get_logger();
-	$logger->info( 'Starting product stock sync from Odoo', array( 'source' => 'woo-odoo-product-sync' ) );
+    $logger = wc_get_logger();
+    $logger->info( 'Starting product stock sync from Odoo', array( 'source' => 'woo-odoo-product-sync' ) );
 
-	// Make API request to get product stock
-	$response = woo_odoo_integration_api_get( 'api/product-stock' );
+    $endpoint = 'api/product-stock';
 
-	if ( is_wp_error( $response ) ) {
-		$logger->error( 'Failed to get product stock: ' . $response->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
-		do_action( 'woo_odoo_integration_get_product_stock_failed', $response );
-		return $response;
-	}
+    $access_token = woo_odoo_integration_api_get_access_token();
 
-	// Parse Odoo response
-	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
-		$error = new WP_Error(
-			'odoo_product_stock_api_error',
-			__( 'Odoo product stock API returned unexpected response format', 'woo-odoo-integration' ),
-			array( 'status' => 500, 'response' => $response )
-		);
+    if ( is_wp_error( $access_token ) ) {
+        $logger->error( 'Failed to get access token: ' . $access_token->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+        return $access_token;
+    }
 
-		$logger->error( 'Product stock API returned unexpected response format', array( 'source' => 'woo-odoo-product-sync' ) );
-		do_action( 'woo_odoo_integration_get_product_stock_failed', $error );
-		return $error;
-	}
+    // Build full URL
+    $api_base_url = defined( 'WOO_ODOO_INTEGRATION_API_BASE_URL' )
+        ? WOO_ODOO_INTEGRATION_API_BASE_URL
+        : carbon_get_theme_option( 'odoo_url' );
 
-	$stock_data = $response['data'];
+    $url = trailingslashit( $api_base_url ) . ltrim( $endpoint, '/' );
 
-	// Apply filters to stock data
-	$stock_data = apply_filters( 'woo_odoo_integration_product_stock_data', $stock_data );
+    // Prepare JSON body data (misal ada limit)
+    $body_data = json_encode( array(
+        'limit' => intval( $limit ),
+    ) );
 
-	// Log the stock data for debugging
-	$logger->debug( 'Retrieved product stock data from Odoo', array(
-		'source' => 'woo-odoo-product-sync',
-		'stock_data' => $stock_data
-	) );
+    $headers = array(
+        'Authorization: Bearer ' . $access_token,
+        'Content-Type: application/json',
+        'Content-Length: ' . strlen( $body_data ),
+    );
 
-	// Fire after get product stock hook
-	do_action( 'woo_odoo_integration_after_get_product_stock', $stock_data );
+    $ch = curl_init();
 
-	$logger->info( 'Successfully retrieved product stock data', array( 'source' => 'woo-odoo-product-sync' ) );
+    $verbose = fopen( 'php://temp', 'w+' );
 
-	return $stock_data;
+    curl_setopt_array( $ch, array(
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_CUSTOMREQUEST => 'GET',
+        CURLOPT_POSTFIELDS => $body_data,
+        CURLOPT_VERBOSE => true,
+        CURLOPT_STDERR => $verbose,
+    ));
+
+    $response = curl_exec( $ch );
+
+    $http_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+    $curl_error = curl_error( $ch );
+
+    rewind( $verbose );
+    $verbose_log = stream_get_contents( $verbose );
+    fclose( $verbose );
+
+    if ( $curl_error ) {
+        $logger->error( 'cURL error: ' . $curl_error, array( 'source' => 'woo-odoo-product-sync' ) );
+        $logger->error( 'Verbose info: ' . $verbose_log, array( 'source' => 'woo-odoo-product-sync' ) );
+
+        $error = new WP_Error(
+            'curl_error',
+            sprintf( __( 'cURL error: %s', 'woo-odoo-integration' ), $curl_error )
+        );
+        do_action( 'woo_odoo_integration_get_product_stock_failed', $error );
+        curl_close( $ch );
+        return $error;
+    }
+
+    curl_close( $ch );
+
+    $logger->info( 'HTTP code from API: ' . $http_code, array( 'source' => 'woo-odoo-product-sync' ) );
+    $logger->debug( 'Raw response from API: ' . $response, array( 'source' => 'woo-odoo-product-sync' ) );
+    $logger->debug( 'Verbose cURL log: ' . $verbose_log, array( 'source' => 'woo-odoo-product-sync' ) );
+
+    $decoded_response = json_decode( $response, true );
+
+    if ( json_last_error() !== JSON_ERROR_NONE ) {
+        $error = new WP_Error(
+            'json_decode_error',
+            __( 'Failed to decode JSON response from Odoo API', 'woo-odoo-integration' ),
+            array( 'response' => $response )
+        );
+        $logger->error( 'JSON decode error: ' . json_last_error_msg(), array( 'source' => 'woo-odoo-product-sync' ) );
+        do_action( 'woo_odoo_integration_get_product_stock_failed', $error );
+        return $error;
+    }
+
+    if ( $http_code !== 200 || empty( $decoded_response['data'] ) ) {
+        $error = new WP_Error(
+            'odoo_product_stock_api_error',
+            __( 'Odoo product stock API returned unexpected response format', 'woo-odoo-integration' ),
+            array( 'status' => $http_code, 'response' => $decoded_response )
+        );
+        $logger->error( 'Product stock API returned unexpected response format', array( 'source' => 'woo-odoo-product-sync' ) );
+        do_action( 'woo_odoo_integration_get_product_stock_failed', $error );
+        return $error;
+    }
+
+    $stock_data = $decoded_response['data'];
+
+    $stock_data = apply_filters( 'woo_odoo_integration_product_stock_data', $stock_data );
+
+    $logger->debug( 'Retrieved product stock data from Odoo', array(
+        'source' => 'woo-odoo-product-sync',
+        'stock_data' => $stock_data
+    ));
+
+    do_action( 'woo_odoo_integration_after_get_product_stock', $stock_data );
+
+    $logger->info( 'Successfully retrieved product stock data', array( 'source' => 'woo-odoo-product-sync' ) );
+
+    return $stock_data;
 }
 
 /**
@@ -1224,52 +1293,121 @@ function woo_odoo_integration_api_get_product_stock() {
  *
  * @return   array|WP_Error          Product price data on success, WP_Error on failure
  */
-function woo_odoo_integration_api_get_product_price() {
-	// Fire before get product price hook
-	do_action( 'woo_odoo_integration_before_get_product_price' );
+function woo_odoo_integration_api_get_product_price( $limit = 99999 ) {
+    // Fire before get product price hook
+    do_action( 'woo_odoo_integration_before_get_product_price' );
 
-	$logger = wc_get_logger();
-	$logger->info( 'Starting product price sync from Odoo', array( 'source' => 'woo-odoo-product-sync' ) );
+    $logger = wc_get_logger();
+    $logger->info( 'Starting product price sync from Odoo', array( 'source' => 'woo-odoo-product-sync' ) );
 
-	// Make API request to get product price
-	$response = woo_odoo_integration_api_get( 'api/product-price' );
+    $endpoint = 'api/product-price';
 
-	if ( is_wp_error( $response ) ) {
-		$logger->error( 'Failed to get product price: ' . $response->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
-		do_action( 'woo_odoo_integration_get_product_price_failed', $response );
-		return $response;
-	}
+    $access_token = woo_odoo_integration_api_get_access_token();
 
-	// Parse Odoo response
-	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
-		$error = new WP_Error(
-			'odoo_product_price_api_error',
-			__( 'Odoo product price API returned unexpected response format', 'woo-odoo-integration' ),
-			array( 'status' => 500, 'response' => $response )
-		);
+    if ( is_wp_error( $access_token ) ) {
+        $logger->error( 'Failed to get access token: ' . $access_token->get_error_message(), array( 'source' => 'woo-odoo-product-sync' ) );
+        return $access_token;
+    }
 
-		$logger->error( 'Product price API returned unexpected response format', array( 'source' => 'woo-odoo-product-sync' ) );
-		do_action( 'woo_odoo_integration_get_product_price_failed', $error );
-		return $error;
-	}
+    // Build full URL
+    $api_base_url = defined( 'WOO_ODOO_INTEGRATION_API_BASE_URL' )
+        ? WOO_ODOO_INTEGRATION_API_BASE_URL
+        : carbon_get_theme_option( 'odoo_url' );
 
-	$price_data = $response['data'];
+    $url = trailingslashit( $api_base_url ) . ltrim( $endpoint, '/' );
 
-	// Apply filters to price data
-	$price_data = apply_filters( 'woo_odoo_integration_product_price_data', $price_data );
+    // Prepare JSON body data (misal ada limit)
+    $body_data = json_encode( array(
+        'limit' => intval( $limit ),
+    ) );
 
-	// Log the price data for debugging
-	$logger->debug( 'Retrieved product price data from Odoo', array(
-		'source' => 'woo-odoo-product-sync',
-		'price_data' => $price_data
-	) );
+    $headers = array(
+        'Authorization: Bearer ' . $access_token,
+        'Content-Type: application/json',
+        'Content-Length: ' . strlen( $body_data ),
+    );
 
-	// Fire after get product price hook
-	do_action( 'woo_odoo_integration_after_get_product_price', $price_data );
+    $ch = curl_init();
 
-	$logger->info( 'Successfully retrieved product price data', array( 'source' => 'woo-odoo-product-sync' ) );
+    $verbose = fopen( 'php://temp', 'w+' );
 
-	return $price_data;
+    curl_setopt_array( $ch, array(
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_CUSTOMREQUEST => 'GET',
+        CURLOPT_POSTFIELDS => $body_data,
+        CURLOPT_VERBOSE => true,
+        CURLOPT_STDERR => $verbose,
+    ));
+
+    $response = curl_exec( $ch );
+
+    $http_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+    $curl_error = curl_error( $ch );
+
+    rewind( $verbose );
+    $verbose_log = stream_get_contents( $verbose );
+    fclose( $verbose );
+
+    if ( $curl_error ) {
+        $logger->error( 'cURL error: ' . $curl_error, array( 'source' => 'woo-odoo-product-sync' ) );
+        $logger->error( 'Verbose info: ' . $verbose_log, array( 'source' => 'woo-odoo-product-sync' ) );
+
+        $error = new WP_Error(
+            'curl_error',
+            sprintf( __( 'cURL error: %s', 'woo-odoo-integration' ), $curl_error )
+        );
+        do_action( 'woo_odoo_integration_get_product_price_failed', $error );
+        curl_close( $ch );
+        return $error;
+    }
+
+    curl_close( $ch );
+
+    $logger->info( 'HTTP code from API: ' . $http_code, array( 'source' => 'woo-odoo-product-sync' ) );
+    $logger->debug( 'Raw response from API: ' . $response, array( 'source' => 'woo-odoo-product-sync' ) );
+    $logger->debug( 'Verbose cURL log: ' . $verbose_log, array( 'source' => 'woo-odoo-product-sync' ) );
+
+    $decoded_response = json_decode( $response, true );
+
+    if ( json_last_error() !== JSON_ERROR_NONE ) {
+        $error = new WP_Error(
+            'json_decode_error',
+            __( 'Failed to decode JSON response from Odoo API', 'woo-odoo-integration' ),
+            array( 'response' => $response )
+        );
+        $logger->error( 'JSON decode error: ' . json_last_error_msg(), array( 'source' => 'woo-odoo-product-sync' ) );
+        do_action( 'woo_odoo_integration_get_product_price_failed', $error );
+        return $error;
+    }
+
+    if ( $http_code !== 200 || empty( $decoded_response['data'] ) ) {
+        $error = new WP_Error(
+            'odoo_product_price_api_error',
+            __( 'Odoo product price API returned unexpected response format', 'woo-odoo-integration' ),
+            array( 'status' => $http_code, 'response' => $decoded_response )
+        );
+        $logger->error( 'Product price API returned unexpected response format', array( 'source' => 'woo-odoo-product-sync' ) );
+        do_action( 'woo_odoo_integration_get_product_price_failed', $error );
+        return $error;
+    }
+
+    $price_data = $decoded_response['data'];
+
+    $price_data = apply_filters( 'woo_odoo_integration_product_price_data', $price_data );
+
+    $logger->debug( 'Retrieved product price data from Odoo', array(
+        'source' => 'woo-odoo-product-sync',
+        'price_data' => $price_data
+    ));
+
+    do_action( 'woo_odoo_integration_after_get_product_price', $price_data );
+
+    $logger->info( 'Successfully retrieved product price data', array( 'source' => 'woo-odoo-product-sync' ) );
+
+    return $price_data;
 }
 
 /**
@@ -1339,6 +1477,7 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 						$quantity = floatval( $variant['quantity'] );
 
 						$sku_stock_map[ $sku ] = $quantity;
+						$regular_stock[ $product_group['uuid'] ] = $quantity;
 
 						$logger->debug( sprintf(
 							'Found SKU mapping: %s => %s (variant: %s)',
@@ -1502,7 +1641,7 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 	            continue;
 	        }
 
-	        if ( ! isset( $sku_stock_map[ $sku ] ) ) {
+	        if ( ! isset( $regular_stock[ $sku ] ) ) {
 	            $sync_results['skipped']++;
 	            $sync_results['details'][] = sprintf(
 	                __( 'Product %s (SKU: %s) skipped: No stock data from Odoo', 'woo-odoo-integration' ),
@@ -1512,7 +1651,7 @@ function woo_odoo_integration_sync_product_stock( $product_ids = array() ) {
 	            continue;
 	        }
 
-	        $new_stock = intval( $sku_stock_map[ $sku ] );
+	        $new_stock = intval( $regular_stock[ $sku ] );
 	        $old_stock = $product->get_stock_quantity();
 
 	        $product->set_stock_quantity( $new_stock );
@@ -1638,6 +1777,8 @@ function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
 			            if ($sale_price > 1) {
 		                    $sku_price_map[ $sku ] = $sale_price;
 		                    $uuid_price_map[ $sku ] = $price_item['uuid'];
+		                    $regular_price[ $product_group['uuid'] ] = $sale_price;
+		                    $uuid_regular_price_map[ $product_group['uuid'] ] = $price_item['uuid'];
 		                }
 
 			        }
@@ -1788,7 +1929,7 @@ function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
 	            continue;
 	        }
 
-	        if ( ! isset( $sku_price_map[ $sku ] ) ) {
+	        if ( ! isset( $regular_price[ $sku ] ) ) {
 	            $sync_price_results['skipped']++;
 	            $sync_price_results['details'][] = sprintf(
 	                __( 'Product %s (SKU: %s) skipped: No price data from Odoo', 'woo-odoo-integration' ),
@@ -1800,9 +1941,22 @@ function woo_odoo_integration_sync_product_price( $product_ids = array() ) {
 
 	        $old_price = $product->get_regular_price();
 
+            $new_price = floatval( $regular_price[ $sku ] );
+            $uuid_price = $uuid_regular_price_map[ $sku ];
+	        if ($sale_price > 1) {
+                $new_price = $sale_price;
+            }
+
 	        $product->set_regular_price( $new_price );
 
 	        $result = $product->save();
+
+	        $product_id_id = wc_get_product_id_by_sku($sku);
+		    update_post_meta(
+		        $product_id_id,
+		        '_odoo_pricelists',
+		        $uuid_price
+		    );
 
 	        if ( $result ) {
 	            $sync_price_results['updated']++;
@@ -2069,42 +2223,114 @@ add_action( 'admin_init', function () {
  *
  * @return array|WP_Error Data produk dari Odoo, atau WP_Error jika gagal
  */
-function woo_odoo_integration_api_get_product_groups( $page = 1, $limit = 80 ) {
-	$endpoint = 'api/product-groups';
+function woo_odoo_integration_api_get_product_groups( $limit = 99999 ) {
+    $endpoint = 'api/product-groups';
 
-	// Query args untuk GET request
-	$query_args = array(
-		// 'page' => intval( $page ),
-		// 'limit' => intval( $limit ),
-	);
+    $access_token = woo_odoo_integration_api_get_access_token();
 
-	// Gunakan helper API GET agar token otomatis
-	$response = woo_odoo_integration_api_get( $endpoint, $query_args );
+    if ( is_wp_error( $access_token ) ) {
+        return $access_token;
+    }
 
-	if ( is_wp_error( $response ) ) {
-		do_action( 'woo_odoo_integration_get_product_groups_failed', $response, $query_args );
-		return $response;
-	}
+    // Build full URL
+    $api_base_url = defined( 'WOO_ODOO_INTEGRATION_API_BASE_URL' )
+        ? WOO_ODOO_INTEGRATION_API_BASE_URL
+        : carbon_get_theme_option( 'odoo_url' );
 
-	// Validasi response
-	if ( ! isset( $response['code'] ) || 200 !== $response['code'] || empty( $response['data'] ) ) {
-		$error = new WP_Error(
-			'odoo_product_groups_api_error',
-			__( 'Odoo product groups API returned unexpected response format', 'woo-odoo-integration' ),
-			array( 'status' => 500, 'response' => $response )
-		);
-		do_action( 'woo_odoo_integration_get_product_groups_failed', $error, $query_args );
-		return $error;
-	}
+    $url = trailingslashit( $api_base_url ) . ltrim( $endpoint, '/' );
 
-	// Data produk
-	$product_groups = $response['data'];
-	// Filter hook untuk modifikasi data jika perlu
-	$product_groups = apply_filters( 'woo_odoo_integration_product_groups_data', $product_groups, $page, $limit );
+    // Prepare JSON body data
+    $body_data = json_encode( array(
+        'limit' => intval( $limit ),
+    ) );
 
-	do_action( 'woo_odoo_integration_after_get_product_groups', $product_groups, $page, $limit );
+    // Prepare headers, termasuk Content-Length supaya cURL tahu ukuran body
+    $headers = array(
+        'Authorization: Bearer ' . $access_token,
+        'Content-Type: application/json',
+        'Content-Length: ' . strlen( $body_data ),
+    );
 
-	return $product_groups;
+    // Initialize cURL
+    $ch = curl_init();
+
+    // Setup a temporary file to capture verbose output for debugging
+    $verbose = fopen( 'php://temp', 'w+' );
+
+    curl_setopt_array( $ch, array(
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 120,
+        CURLOPT_CUSTOMREQUEST => 'GET',
+        CURLOPT_POSTFIELDS => $body_data,
+        CURLOPT_VERBOSE => true,
+        CURLOPT_STDERR => $verbose,
+    ));
+
+    $response = curl_exec( $ch );
+
+    $http_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+    $curl_error = curl_error( $ch );
+
+    // Rewind and read verbose log
+    rewind( $verbose );
+    $verbose_log = stream_get_contents( $verbose );
+    fclose( $verbose );
+
+    if ( $curl_error ) {
+        error_log( 'cURL error: ' . $curl_error );
+        error_log( 'Verbose info: ' . $verbose_log );
+
+        $error = new WP_Error(
+            'curl_error',
+            sprintf( __( 'cURL error: %s', 'woo-odoo-integration' ), $curl_error )
+        );
+        do_action( 'woo_odoo_integration_get_product_groups_failed', $error, $body_data );
+        curl_close( $ch );
+        return $error;
+    }
+
+    curl_close( $ch );
+
+    // Log response and verbose info for troubleshooting
+    // error_log( 'HTTP Code: ' . $http_code );
+    // error_log( 'Response: ' . $response );
+    // error_log( 'Verbose info: ' . $verbose_log );
+
+    // Decode JSON response
+    $decoded_response = json_decode( $response, true );
+
+    if ( json_last_error() !== JSON_ERROR_NONE ) {
+        $error = new WP_Error(
+            'json_decode_error',
+            __( 'Failed to decode JSON response from Odoo API', 'woo-odoo-integration' ),
+            array( 'response' => $response )
+        );
+        do_action( 'woo_odoo_integration_get_product_groups_failed', $error, $body_data );
+        return $error;
+    }
+
+    // Validate response
+    if ( $http_code !== 200 || empty( $decoded_response['data'] ) ) {
+        $error = new WP_Error(
+            'odoo_product_groups_api_error',
+            __( 'Odoo product groups API returned unexpected response format', 'woo-odoo-integration' ),
+            array( 'status' => $http_code, 'response' => $decoded_response )
+        );
+        do_action( 'woo_odoo_integration_get_product_groups_failed', $error, $body_data );
+        return $error;
+    }
+
+    // Extract data
+    $product_groups = $decoded_response['data'];
+
+    // Filter hook
+    $product_groups = apply_filters( 'woo_odoo_integration_product_groups_data', $product_groups, $limit );
+
+    do_action( 'woo_odoo_integration_after_get_product_groups', $product_groups, $limit );
+
+    return $product_groups;
 }
 
 function woo_odoo_integration_api_request_order( $endpoint, $body = array(), $method = 'POST' ) {
