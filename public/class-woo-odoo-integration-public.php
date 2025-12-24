@@ -56,45 +56,50 @@ class Front {
 
 	}
 
-	public function validate_add_to_cart( $passed, $product_id, $quantity ) {
-		// Get cart items
-		$cart_items = WC()->cart->get_cart();
+	public function validate_add_to_cart( $passed, $product_id, $quantity, $variation_id = 0, $variations = [] ) {
 
-		// Current product location attribute value
-		$product = wc_get_product( $product_id );
-		$location = $product->get_attribute( 'pa_location' );
+	    $get_att_location = carbon_get_theme_option('odoo_location_att');
 
-		do_action( "qm/debug", [ 
-			"location" => $location,
-			"product" => $product,
-		] );
+	    if (isset($_REQUEST['variation_id']) && $_REQUEST['variation_id']) :
 
-		$cart_items = WC()->cart->get_cart();
+	        $variation_id = intval($_REQUEST['variation_id']);
+	        $variation = wc_get_product($variation_id);
+	        
+	        $location = $variation->get_attribute($get_att_location);
+	        $location = trim($location);
 
-		if ( empty( $cart_items ) )
-			return $passed;
+	        foreach (WC()->cart->get_cart() as $cart_item_key => $cart_item) :
 
-		// Check if the product's location matches any item in the cart
-		foreach ( $cart_items as $cart_item ) {
-			$cart_product = wc_get_product( $cart_item['product_id'] );
-			$cart_location = $cart_product->get_attribute( 'pa_location' );
+	            $cart_product = $cart_item['data'];
+	            $cart_location = $cart_product->get_attribute($get_att_location);
+	            $cart_location = trim($cart_location);
 
-			do_action( "qm/debug", [ 
-				"cart_location" => $cart_location,
-			] );
-			if ( $cart_location === $location ) {
-				// If a match is found, allow adding to cart
-				return $passed;
-			} else {
-				// If no match is found, prevent adding to cart
-				wc_add_notice( __( 'You can only add products from the same location to the cart.', 'woo-odoo-integration' ), 'error' );
-				return false;
-			}
+	            if ($cart_location && $cart_location !== $location) :
+	                
+	                wc_add_notice('You can only add products from the same location to the cart.', 'error');
+	                
+	                return false;
 
+	            endif;
+
+	        endforeach;
+
+	    endif;
+
+	    return $passed;
+
+	}
+
+	public function woo_odoo_integration_checkout_send_order( $order_id ) {
+
+		$result = woo_odoo_integration_api_send_order( $order_id );
+
+		if ( is_wp_error( $result ) ) {
+			error_log( 'Odoo Order Sync Failed: ' . $result->get_error_message() );
+		} else {
+			error_log( 'Odoo Order Sync Success: ' . print_r( $result, true ) );
 		}
-
-		// Custom validation logic for adding products to the cart
-		return $passed;
+		
 	}
 
 }

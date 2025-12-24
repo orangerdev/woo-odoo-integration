@@ -106,7 +106,7 @@ class Scheduler_Admin
 
         // Get current sync status
         $sync_status = $this->scheduler->get_sync_status();
-        $next_scheduled = wp_next_scheduled('woo_odoo_auto_sync_product_stock');
+        $next_scheduled = wp_next_scheduled('woo_odoo_auto_sync_product');
 
         // Get timezone info
         $timezone_string = get_option('timezone_string', 'UTC');
@@ -188,6 +188,25 @@ class Scheduler_Admin
                     <form method="post" action="options.php">
                         <?php settings_fields('woo_odoo_auto_sync_settings'); ?>
                         <table class="form-table">
+                            <tr>
+                                <th scope="row">
+                                    <label for="chunk_size"><?php _e('Sync Mode', 'woo-odoo-integration'); ?></label>
+                                </th>
+                                <td>
+                                    <?php $mode = get_option('woo_odoo_auto_sync_mode_type'); ?>
+                                    <select name="woo_odoo_auto_sync_mode_type" id="sync-mode">
+                                        <option value="product" <?php selected($mode, 'product'); ?>>
+                                            <?php _e('Product', 'woo-odoo-integration'); ?>
+                                        </option>
+                                        <option value="stock" <?php selected($mode, 'stock'); ?>>
+                                            <?php _e('Stock', 'woo-odoo-integration'); ?>
+                                        </option>
+                                        <option value="price" <?php selected($mode, 'price'); ?>>
+                                            <?php _e('Price', 'woo-odoo-integration'); ?>
+                                        </option>
+                                    </select>
+                                </td>
+                            </tr>
                             <tr>
                                 <th scope="row">
                                     <label for="chunk_size"><?php _e('Chunk Size', 'woo-odoo-integration'); ?></label>
@@ -438,6 +457,7 @@ class Scheduler_Admin
      */
     public function register_settings()
     {
+        register_setting('woo_odoo_auto_sync_settings', 'woo_odoo_auto_sync_mode_type');
         register_setting('woo_odoo_auto_sync_settings', 'woo_odoo_auto_sync_chunk_size');
         register_setting('woo_odoo_auto_sync_settings', 'woo_odoo_auto_sync_chunk_interval');
     }
@@ -461,7 +481,8 @@ class Scheduler_Admin
         }
 
         // Try to start sync
-        $result = $this->scheduler->force_start_sync();
+        $mode = get_option('woo_odoo_auto_sync_mode_type');
+        $result = $this->scheduler->force_start_sync( true, $mode ); // CLI mode langsung untuk sinkronisasi harga
 
         if ($result) {
             wp_send_json_success(__('Automatic sync started successfully', 'woo-odoo-integration'));
@@ -541,9 +562,9 @@ class Scheduler_Admin
 
         wp_enqueue_script(
             'woo-odoo-scheduler-admin',
-            plugin_dir_url(__FILE__) . '../js/woo-odoo-integration-scheduler.js',
+            plugin_dir_url(__FILE__) . './js/woo-odoo-integration-scheduler.js',
             array('jquery'),
-            $this->version,
+            '1.0.3',
             true
         );
 

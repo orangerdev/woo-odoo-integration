@@ -8,5 +8,6 @@
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once __DIR__ . '/class-woo-odoo-integration-cli-product-stock-sync.php';
+	require_once __DIR__ . '/class-woo-odoo-integration-cli-product-price-sync.php';
 	require_once __DIR__ . '/class-woo-odoo-integration-cli-product-sync.php';
 }

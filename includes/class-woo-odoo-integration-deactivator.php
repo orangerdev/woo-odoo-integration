@@ -34,7 +34,9 @@ class Woo_Odoo_Integration_Deactivator
     public static function deactivate()
     {
         // Clear all scheduled sync events
+        wp_clear_scheduled_hook('woo_odoo_auto_sync_product');
         wp_clear_scheduled_hook('woo_odoo_auto_sync_product_stock');
+        wp_clear_scheduled_hook('woo_odoo_auto_sync_product_price');
 
         // Clear any remaining chunk processing events
         $crons = _get_cron_array();
